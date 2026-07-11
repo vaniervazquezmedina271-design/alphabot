@@ -1,0 +1,29 @@
+# ============================================================
+#  Agente de Búsqueda Financiera — Dependencias
+# ============================================================
+
+# --- LLM (multi-proveedor: OpenRouter, OpenAI, Groq, etc.) ---
+openai>=1.40.0            # SDK OpenAI-compatible (cubre OpenRouter, OpenAI, Groq, Together, DeepSeek, Ollama, LM Studio)
+anthropic>=0.39.0         # Claude (Anthropic)
+google-genai>=0.3.0       # Gemini (Google)
+
+# --- Scraping ---
+httpx>=0.27.0             # Cliente HTTP async/sync con headers realistas
+beautifulsoup4>=4.12.0    # Parseo de HTML
+lxml>=5.2.0               # Backend rápido de parsing
+feedparser>=6.0.11        # RSS (Yahoo Finance, Bloomberg)
+
+# --- Dashboard ---
+streamlit>=1.36.0         # Interfaz web interactiva (localhost:8501)
+
+# --- Telegram ---
+python-telegram-bot>=21.3 # Bot y comandos interactivos
+requests>=2.32.0          # Envío simple de mensajes (notifier)
+
+# --- Config y entorno ---
+pyyaml>=6.0.1             # Lectura/escritura de config.yaml
+python-dotenv>=1.0.1      # Carga de variables de entorno (.env)
+
+# --- Utilidades ---
+python-dateutil>=2.9.0    # Manejo de zonas horarias (reporte 8am)
+tzdata>=2024.1            # Datos de zonas horarias para Windows (zoneinfo)

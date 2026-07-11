@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mockup Telegram — Estilo C Mejorado + Última Hora</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #0e1621;
+    color: #e9edf0;
+  }
+  .page-header { text-align: center; padding: 32px 20px 8px; }
+  .page-header h1 { font-size: 22px; font-weight: 600; color: #fff; }
+  .page-header p { color: #7d8e9e; font-size: 14px; margin-top: 6px; max-width: 640px; margin-left: auto; margin-right: auto; }
+  .page-header .legend {
+    display: inline-block; margin-top: 14px; padding: 8px 16px;
+    background: #1c2733; border-radius: 20px; font-size: 13px; color: #6cb4ff;
+  }
+
+  .phone-wrap { display: flex; flex-wrap: wrap; justify-content: center; gap: 40px; padding: 30px 20px 30px; }
+  .phone { width: 440px; box-shadow: 0 0 0 1px #1c2733; }
+
+  .tg-topbar {
+    display: flex; align-items: center; gap: 12px;
+    background: #17212b; padding: 12px 16px; border-bottom: 1px solid #0b131c;
+  }
+  .tg-topbar .avatar {
+    width: 42px; height: 42px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-size: 20px;
+  }
+  .av-daily { background: linear-gradient(135deg, #5fd0ff, #2a8fe0); }
+  .av-break { background: linear-gradient(135deg, #ff6b6b, #c92a2a); }
+  .av-live  { background: linear-gradient(135deg, #ffd166, #f59f00); }
+  .tg-topbar .meta .name { font-size: 15px; font-weight: 600; color: #fff; }
+  .tg-topbar .meta .status { font-size: 12px; color: #6cb4ff; }
+  .tg-topbar .dots { margin-left: auto; color: #7d8e9e; font-size: 20px; }
+
+  .chat {
+    background:
+      radial-gradient(circle at 20% 20%, rgba(40,80,120,0.25), transparent 60%),
+      radial-gradient(circle at 80% 70%, rgba(60,40,90,0.20), transparent 60%),
+      #0e1621;
+    padding: 20px 14px; min-height: 200px;
+  }
+  .date-pill { text-align: center; margin: 6px 0 16px; }
+  .date-pill span { background: rgba(31,45,58,0.85); color: #fff; font-size: 12px; padding: 4px 12px; border-radius: 12px; }
+
+  .bubble {
+    max-width: 90%; background: #182533; border-radius: 12px;
+    padding: 12px 13px 9px; margin: 6px 0; position: relative;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.25); font-size: 14px; line-height: 1.5;
+    color: #e9edf0; word-wrap: break-word;
+  }
+  .bubble .time { position: absolute; bottom: 4px; right: 10px; font-size: 11px; color: #6c7883; }
+  .sent-checks { color: #6cb4ff; }
+
+  .style-label { text-align: center; font-size: 13px; color: #6cb4ff; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 4px; font-weight: 600; }
+  .style-desc { text-align: center; font-size: 12px; color: #7d8e9e; margin-bottom: 14px; padding: 0 16px; }
+
+  /* ===== Reporte diario (Estilo C mejorado) ===== */
+  .report-title { font-size: 16px; font-weight: 800; color: #fff; letter-spacing: 0.5px; }
+  .report-sub { font-size: 12px; color: #7d8e9e; margin: 2px 0 4px; }
+  .report-divider { border: 0; border-top: 1px solid #2a3b4d; margin: 8px 0; }
+
+  .news { margin: 12px 0; }
+  .news-head {
+    background: #213040; border-radius: 8px; padding: 6px 10px;
+    display: flex; align-items: center; gap: 7px; margin-bottom: 6px;
+  }
+  .news-head .nnum { font-weight: 800; color: #6cb4ff; font-size: 14px; }
+  .news-head .stars { color: #ffcc4d; font-size: 12px; }
+  .news-head .impact { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px; letter-spacing: 0.5px; }
+  .impact-high { background: rgba(255,107,107,0.18); color: #ff8585; }
+  .impact-med  { background: rgba(255,146,43,0.18); color: #ff922b; }
+  .news-head .evname { font-weight: 700; color: #fff; font-size: 14px; margin-left: auto; }
+
+  .news-meta { font-size: 12.5px; display: flex; gap: 8px; align-items: center; margin: 3px 0 5px; flex-wrap: wrap; }
+  .news-meta .t { color: #9bb2c5; }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 10px; font-weight: 700; }
+  .tag.neg { background: rgba(255,107,107,0.15); color: #ff8585; }
+  .tag.neu { background: rgba(255,209,102,0.15); color: #ffd166; }
+  .tag.pos { background: rgba(81,207,102,0.15); color: #51cf66; }
+  .tag.vol { background: rgba(255,146,43,0.15); color: #ff922b; }
+
+  .context {
+    border-left: 3px solid #4a6378; background: #14202c;
+    padding: 6px 10px; border-radius: 0 6px 6px 0; margin: 5px 0 6px;
+    font-size: 12.8px; color: #b9c6d2; line-height: 1.5;
+  }
+  .context .label { color: #6cb4ff; font-weight: 700; }
+
+  .points-label { font-size: 11.5px; color: #6cb4ff; font-weight: 700; margin: 5px 0 2px; text-transform: uppercase; letter-spacing: 0.4px; }
+  .news ul { list-style: none; padding: 0; }
+  .news li { font-size: 12.8px; color: #d3dce4; padding-left: 12px; position: relative; margin: 2px 0; line-height: 1.45; }
+  .news li::before { content: "•"; position: absolute; left: 2px; color: #6cb4ff; font-weight: 700; }
+  .news li b { color: #fff; }
+
+  .source-link {
+    margin-top: 7px; font-size: 12.5px;
+  }
+  .source-link a {
+    color: #6cb4ff; text-decoration: none; font-weight: 600;
+    border-bottom: 1px dotted #6cb4ff; padding-bottom: 1px;
+  }
+  .source-link .arr { color: #6cb4ff; }
+  .src-tag { color: #9bb2c5; font-weight: 600; }
+
+  /* ===== Impacto en activos (tickers/índices beneficiados vs perjudicados) ===== */
+  .assets { margin-top: 6px; }
+  .assets-label { font-size: 11.5px; color: #6cb4ff; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; }
+  .assets-grid { display: flex; gap: 7px; }
+  .assets-col { flex: 1; border-radius: 7px; padding: 6px 8px; font-size: 12px; }
+  .col-ben { background: rgba(81,207,102,0.10); border-left: 3px solid #51cf66; }
+  .col-per { background: rgba(255,107,107,0.10); border-left: 3px solid #ff6b6b; }
+  .assets-col .head { font-weight: 800; font-size: 11px; margin-bottom: 3px; letter-spacing: 0.3px; }
+  .col-ben .head { color: #51cf66; }
+  .col-per .head { color: #ff8585; }
+  .ticker { display: inline-block; background: #0f1822; padding: 1px 6px; border-radius: 4px; margin: 1px 1px; font-weight: 700; color: #e9edf0; font-size: 11.5px; }
+  .assets-col .note { display:block; font-size: 10.5px; color: #9bb2c5; font-style: italic; margin-top: 3px; font-weight: 400; }
+
+  .report-foot {
+    margin-top: 10px; padding-top: 8px; border-top: 1px solid #2a3b4d;
+    font-size: 11.5px; color: #7d8e9e;
+  }
+  .hashtags { color: #6cb4ff; font-size: 11.5px; margin-top: 5px; }
+  .disclaimer { color: #5c6b7a; font-size: 10.5px; margin-top: 4px; font-style: italic; }
+
+  /* ===== Botones inline (Telegram) ===== */
+  .inline-kbd { margin-top: 8px; }
+  .inline-kbd .row { display: flex; gap: 6px; margin-top: 5px; }
+  .inline-kbd button {
+    flex: 1; background: #2b5278; border: none; color: #fff;
+    padding: 7px 8px; border-radius: 6px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  }
+  .inline-kbd button.sec { background: #1c2e42; color: #9bb2c5; }
+
+  /* ===== Última hora (breaking) ===== */
+  .brk-banner {
+    background: linear-gradient(90deg, #c92a2a, #ff6b6b);
+    color: #fff; font-weight: 800; font-size: 13px;
+    padding: 6px 10px; border-radius: 6px; letter-spacing: 0.5px;
+    display: flex; align-items: center; gap: 6px; margin-bottom: 7px;
+  }
+  .pulse { animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+  .brk-title { font-weight: 800; color: #fff; font-size: 15px; margin: 2px 0 4px; }
+
+  .recos {
+    max-width: 920px; margin: 10px auto 60px; padding: 24px 28px;
+    background: #17212b; border-radius: 14px; border: 1px solid #243341;
+  }
+  .recos h2 { color: #fff; font-size: 18px; margin-bottom: 14px; }
+  .recos h2 span { color: #6cb4ff; }
+  .recos ul { list-style: none; }
+  .recos li { padding: 7px 0; border-bottom: 1px solid #1f2d3a; font-size: 13.5px; color: #c5d2de; line-height: 1.5; }
+  .recos li:last-child { border-bottom: none; }
+  .recos li b { color: #6cb4ff; }
+  .recos .new { display:inline-block; background:#51cf66; color:#0e1621; font-size:10px; font-weight:800; padding:1px 6px; border-radius:8px; margin-left:6px; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>📲 Estilo C Mejorado + Noticias de Última Hora</h1>
+  <p>Añadí: contexto de cada noticia, enlaces clickeables a la fuente, encabezados claros por impacto, y el formato de noticias que van saliendo en el momento.</p>
+  <div class="legend">💡 Esto es texto puro de Telegram (con enlaces y botones reales) — no es PDF</div>
+</div>
+
+<div class="phone-wrap">
+
+  <!-- ============ REPORTE DIARIO 8AM (Estilo C mejorado) ============ -->
+  <div class="phone">
+    <div class="style-label">Reporte diario · 8:00 AM</div>
+    <div class="style-desc">Tu tarea estrella. Noticias de 2-3 estrellas con contexto, puntos clave y enlace a la fuente.</div>
+
+    <div class="tg-topbar">
+      <div class="avatar av-daily">📊</div>
+      <div class="meta">
+        <div class="name">Market Daily</div>
+        <div class="status">canal · 12.4K miembros</div>
+      </div>
+      <div class="dots">⋮</div>
+    </div>
+
+    <div class="chat">
+      <div class="date-pill"><span>Hoy</span></div>
+
+      <div class="bubble">
+        <div class="report-title">📊 MARKET DAILY</div>
+        <div class="report-sub">Miércoles 09 de Julio · 08:00 AM · Filtro ⭐⭐+</div>
+        <hr class="report-divider">
+
+        <!-- NOTICIA 1 -->
+        <div class="news">
+          <div class="news-head">
+            <span class="nnum">1</span><span class="stars">⭐⭐⭐</span>
+            <span class="impact impact-high">ALTO IMPACTO</span>
+            <span class="evname">IPC (CPI) — Inflación EE.UU.</span>
+          </div>
+          <div class="news-meta">
+            <span class="t">🕘 09:30</span><span>🇺🇸</span>
+            <span class="tag neg">📉 Negativo · 78%</span>
+          </div>
+          <div class="context">
+            <span class="label">📝 Contexto:</span> El IPC mide la inflación al consumidor, el dato más esperado del mes. Una lectura por encima de lo proyectado enfriaría las esperanzas de recorte de tasas por parte de la Fed este año, presionando a la baja en bonos y acciones.
+          </div>
+          <div class="points-label">Puntos clave</div>
+          <ul>
+            <li><b>Forecast:</b> 0.3% mensual · <b>Previo:</b> 0.4%</li>
+            <li>Lectura &gt; 3% anual reduciría recortes de tasa</li>
+            <li>USD podría fortalecerse ante inflación persistente</li>
+          </ul>
+          <div class="assets">
+            <div class="assets-label">📊 Impacto en activos (si inflación alta)</div>
+            <div class="assets-grid">
+              <div class="assets-col col-ben">
+                <div class="head">🟢 BENEFICIADOS</div>
+                <span class="ticker">USD</span><span class="ticker">GLD Oro</span><span class="ticker">XLE Energía</span><span class="ticker">VIX</span>
+                <span class="note">Dólar e inversiones refugio suben</span>
+              </div>
+              <div class="assets-col col-per">
+                <div class="head">🔴 PERJUDICADOS</div>
+                <span class="ticker">TLT Bonos</span><span class="ticker">QQQ Tech</span><span class="ticker">BTC</span><span class="ticker">ARKK</span>
+                <span class="note">Crecimiento y riesgo caen</span>
+              </div>
+            </div>
+          </div>
+          <div class="source-link">🔗 <span class="src-tag">Investing.com</span> · <a href="#">Leer noticia completa <span class="arr">→</span></a></div>
+        </div>
+
+        <hr class="report-divider">
+
+        <!-- NOTICIA 2 -->
+        <div class="news">
+          <div class="news-head">
+            <span class="nnum">2</span><span class="stars">⭐⭐⭐</span>
+            <span class="impact impact-high">ALTO IMPACTO</span>
+            <span class="evname">Decisión de Tasas BCE</span>
+          </div>
+          <div class="news-meta">
+            <span class="t">🕘 10:00</span><span>🇪🇺</span>
+            <span class="tag neu">➡️ Neutral · 55%</span>
+          </div>
+          <div class="context">
+            <span class="label">📝 Contexto:</span> El Banco Central Europeo anuncia su decisión de política monetaria. Un recorte de 25 puntos básicos ya está descontado por el mercado, por lo que el foco estará en el tono de Lagarde y en las señales sobre los próximos movimientos.
+          </div>
+          <div class="points-label">Puntos clave</div>
+          <ul>
+            <li><b>Recorte esperado:</b> -25 pb (ya descontado)</li>
+            <li>Atención a la conferencia de prensa de Lagarde</li>
+            <li>EUR estable si no hay sorpresas en el comunicado</li>
+          </ul>
+          <div class="assets">
+            <div class="assets-label">📊 Impacto en activos (recorte acomodaticio)</div>
+            <div class="assets-grid">
+              <div class="assets-col col-ben">
+                <div class="head">🟢 BENEFICIADOS</div>
+                <span class="ticker">EUR/USD</span><span class="ticker">EZR Eurozona</span><span class="ticker">EWP Bancos EU</span><span class="ticker">SXE5</span>
+                <span class="note">Bolsa europea y euro se apoyan</span>
+              </div>
+              <div class="assets-col col-per">
+                <div class="head">🔴 PERJUDICADOS</div>
+                <span class="ticker">EUR/USD ↓</span><span class="ticker">DBK Bancos</span><span class="ticker">Bund</span>
+                <span class="note">Si tono duro: euro sube, bancos sufren</span>
+              </div>
+            </div>
+          </div>
+          <div class="source-link">🔗 <span class="src-tag">Forex Factory</span> · <a href="#">Leer noticia completa <span class="arr">→</span></a></div>
+        </div>
+
+        <hr class="report-divider">
+
+        <!-- NOTICIA 3 -->
+        <div class="news">
+          <div class="news-head">
+            <span class="nnum">3</span><span class="stars">⭐⭐</span>
+            <span class="impact impact-med">IMPACTO MEDIO</span>
+            <span class="evname">Discurso de Powell (Fed)</span>
+          </div>
+          <div class="news-meta">
+            <span class="t">🕘 14:00</span><span>🇺🇸</span>
+            <span class="tag vol">⚠️ Volátil</span>
+          </div>
+          <div class="context">
+            <span class="label">📝 Contexto:</span> El presidente de la Reserva Federal habla sobre la economía. El mercado suele reaccionar fuerte al tono (halcuno vs. palomo) y a cualquier pista sobre el rumbo de las tasas.
+          </div>
+          <div class="points-label">Puntos clave</div>
+          <ul>
+            <li>Vigilar el tono sobre inflación y empleo</li>
+            <li>Riesgo de movimiento brusco en ambos sentidos</li>
+          </ul>
+          <div class="assets">
+            <div class="assets-label">📊 Impacto en activos (si tono halcún)</div>
+            <div class="assets-grid">
+              <div class="assets-col col-ben">
+                <div class="head">🟢 BENEFICIADOS</div>
+                <span class="ticker">USD</span><span class="ticker">GLD Oro</span><span class="ticker">VIX</span><span class="ticker">XLP Defensivo</span>
+                <span class="note">Dólar y refugio ganan</span>
+              </div>
+              <div class="assets-col col-per">
+                <div class="head">🔴 PERJUDICADOS</div>
+                <span class="ticker">SPX</span><span class="ticker">QQQ</span><span class="ticker">BTC</span><span class="ticker">IWM Smallcaps</span>
+                <span class="note">Renta variable bajo presión</span>
+              </div>
+            </div>
+          </div>
+          <div class="source-link">🔗 <span class="src-tag">Yahoo Finance</span> · <a href="#">Leer noticia completa <span class="arr">→</span></a></div>
+        </div>
+
+        <div class="report-foot">
+          🤖 Market Daily · 3 eventos de alto impacto hoy
+          <div class="hashtags">#CPI #BCE #Fed #Mercados #Inflación</div>
+          <div class="disclaimer">⚠️ Contenido informativo, no es asesoría financiera.</div>
+        </div>
+        <span class="time">08:00 <span class="sent-checks">✓✓</span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ ÚLTIMA HORA (noticias del momento) ============ -->
+  <div class="phone">
+    <div class="style-label">🚨 Última hora · en tiempo real</div>
+    <div class="style-desc">Cuando sale una noticia importante durante el día (no esperada), el agente te avisa al instante con este formato. Tu comunidad la ve nada más publicarse.</div>
+
+    <div class="tg-topbar">
+      <div class="avatar av-break">🚨</div>
+      <div class="meta">
+        <div class="name">Market Daily · Alertas</div>
+        <div class="status">canal · 12.4K miembros</div>
+      </div>
+      <div class="dots">⋮</div>
+    </div>
+
+    <div class="chat">
+      <div class="date-pill"><span>Hoy</span></div>
+
+      <!-- ALERTA 1 -->
+      <div class="bubble">
+        <div class="brk-banner"><span class="pulse">🔴</span> ÚLTIMO MOMENTO · 11:42</div>
+        <div class="brk-title">NVIDIA sube +6% tras batir earnings</div>
+        <div class="news-meta">
+          <span>📈 Acciones</span><span>🇺🇸</span>
+          <span class="tag pos">🟢 Positivo · 90%</span>
+        </div>
+        <div class="context">
+          <span class="label">📝 Contexto:</span> NVDA reportó ingresos de $30.4B, un +15% por encima del consenso. El guidance del próximo trimestre también superó expectativas, reforzando el liderazgo del sector de IA. Arrastró al alza a proveedores como TSM y Broadcom.
+        </div>
+        <ul>
+          <li><b>Ingresos:</b> $30.4B vs $26.5B esperado</li>
+          <li>Guidance Q3 por encima del consenso</li>
+          <li>Sectores relacionados: semiconductores, IA</li>
+        </ul>
+        <div class="assets">
+          <div class="assets-label">📊 Impacto en activos</div>
+          <div class="assets-grid">
+            <div class="assets-col col-ben">
+              <div class="head">🟢 BENEFICIADOS</div>
+              <span class="ticker">NVDA</span><span class="ticker">TSM</span><span class="ticker">AVGO</span><span class="ticker">SMH Semis</span><span class="ticker">SOXX</span>
+              <span class="note">Cadena de IA y semiconductores</span>
+            </div>
+            <div class="assets-col col-per">
+              <div class="head">🔴 PERJUDICADOS</div>
+              <span class="ticker">AMD ↓</span><span class="ticker">INTC</span><span class="ticker">XLY Consumo</span>
+              <span class="note">Rivales pierden cuota; rotación sectorial</span>
+            </div>
+          </div>
+        </div>
+        <div class="source-link">🔗 <span class="src-tag">Yahoo Finance</span> · <a href="#">Leer noticia completa <span class="arr">→</span></a></div>
+        <div class="inline-kbd">
+          <div class="row">
+            <button>📊 Ver análisis completo</button>
+            <button class="sec">📰 Más noticias</button>
+          </div>
+        </div>
+        <span class="time">11:42 <span class="sent-checks">✓✓</span></span>
+      </div>
+
+      <!-- ALERTA 2 -->
+      <div class="bubble">
+        <div class="brk-banner"><span class="pulse">🔴</span> ÚLTIMO MOMENTO · 14:08</div>
+        <div class="brk-title">⚡ Petróleo Brent cae 3% tras datos de inventarios</div>
+        <div class="news-meta">
+          <span>🛢️ Commodities</span><span>🇺🇸</span>
+          <span class="tag neg">📉 Negativo · 72%</span>
+        </div>
+        <div class="context">
+          <span class="label">📝 Contexto:</span> La EIA reportó un aumento inesperado de +4.8M barriles en inventarios de crudo, frente a una caída esperada. Señal de menor demanda que presiona los precios del energía a la baja.
+        </div>
+        <ul>
+          <li><b>Inventarios:</b> +4.8M vs -1.5M esperado</li>
+          <li>Brent pierde soporte de los $85</li>
+        </ul>
+        <div class="assets">
+          <div class="assets-label">📊 Impacto en activos</div>
+          <div class="assets-grid">
+            <div class="assets-col col-ben">
+              <div class="head">🟢 BENEFICIADOS</div>
+              <span class="ticker">XLY Aerolíneas</span><span class="ticker">FDX</span><span class="ticker">DAL</span><span class="ticker">USD</span>
+              <span class="note">Menor coste energético ayuda a transporte</span>
+            </div>
+            <div class="assets-col col-per">
+              <div class="head">🔴 PERJUDICADOS</div>
+              <span class="ticker">XOM</span><span class="ticker">CVX</span><span class="ticker">XLE Energía</span><span class="ticker">OIH</span>
+              <span class="note">Petroleras y servicios energéticos caen</span>
+            </div>
+          </div>
+        </div>
+        <div class="source-link">🔗 <span class="src-tag">Investing.com</span> · <a href="#">Leer noticia completa <span class="arr">→</span></a></div>
+        <span class="time">14:08 <span class="sent-checks">✓✓</span></span>
+      </div>
+
+      <!-- ALERTA 3 -->
+      <div class="bubble">
+        <div class="brk-banner"><span class="pulse">🔴</span> ÚLTIMO MOMENTO · 15:55</div>
+        <div class="brk-title">🥇 Oro marca nuevo récord histórico</div>
+        <div class="news-meta">
+          <span>🛡️ Refugio</span><span>🌍</span>
+          <span class="tag pos">🟢 Positivo · 81%</span>
+        </div>
+        <div class="context">
+          <span class="label">📝 Contexto:</span> El oro supera los $2,450 por primera vez, impulsado por la debilidad del dólar y la incertidumbre geopolítica. Refleja demanda de activos refugio ante el riesgo bajista en bolsas.
+        </div>
+        <div class="source-link">🔗 <span class="src-tag">Bloomberg</span> · <a href="#">Leer noticia completa <span class="arr">→</span></a></div>
+        <span class="time">15:55 <span class="sent-checks">✓✓</span></span>
+      </div>
+
+      <!-- ALERTA 4 — Ejemplo de razonamiento Hermes 4 sobre Trump -->
+      <div class="bubble">
+        <div class="brk-banner"><span class="pulse">🔴</span> ÚLTIMO MOMENTO · 16:30</div>
+        <div class="brk-title">🗣️ Trump anuncia nuevos aranceles del 60% a China</div>
+        <div class="news-meta">
+          <span>🌍 Geopolítica</span><span>🇺🇸🇨🇳</span>
+          <span class="tag neg">📉 Negativo · 88%</span>
+          <span class="tag vol">⚠️ Muy volátil</span>
+        </div>
+        <div class="context">
+          <span class="label">📝 Contexto:</span> En un discurso, Trump anunció aranceles del 60% a importaciones chinas si gana las elecciones. El mercado reacciona de inmediato al riesgo de guerra comercial que afectaría a empresas con alta exposición a China.
+        </div>
+        <div class="points-label">🧠 Razonamiento del agente (Hermes 4)</div>
+        <ul>
+          <li><b>¿Es de alto impacto?</b> Sí — toca relaciones EE.UU.-China, un tema histórico de alta volatilidad</li>
+          <li>Afecta a cientos de empresas con cadena de suministro en Asia</li>
+          <li>Inesperado en magnitud (60% supera lo ya descontado)</li>
+        </ul>
+        <div class="assets">
+          <div class="assets-label">📊 Impacto en activos</div>
+          <div class="assets-grid">
+            <div class="assets-col col-ben">
+              <div class="head">🟢 BENEFICIADOS</div>
+              <span class="ticker">GLD Oro</span><span class="ticker">VIX</span><span class="ticker">TLT Bonos</span><span class="ticker">XLP Defensivo</span>
+              <span class="note">Refugio y activos seguros ganan</span>
+            </div>
+            <div class="assets-col col-per">
+              <div class="head">🔴 PERJUDICADOS</div>
+              <span class="ticker">AAPL</span><span class="ticker">TSLA</span><span class="ticker">NKE</span><span class="ticker">WMT</span><span class="ticker">BABA</span><span class="ticker">SOXX Semis</span>
+              <span class="note">Marcas y semis con exposición a China caen</span>
+            </div>
+          </div>
+        </div>
+        <div class="source-link">🔗 <span class="src-tag">Bloomberg</span> · <a href="#">Leer noticia completa <span class="arr">→</span></a></div>
+        <span class="time">16:30 <span class="sent-checks">✓✓</span></span>
+      </div>
+
+      <!-- Ejemplo de noticia DESCARTADA (filtro inteligente) -->
+      <div class="bubble" style="opacity:0.55; border:1px dashed #5c6b7a;">
+        <div style="font-size:11.5px; color:#9bb2c5; margin-bottom:4px;">🔇 <b>FILTRO INTELIGENTE — no enviada al canal</b></div>
+        <div style="font-size:13px; color:#c5d2de;">"El CEO de una empresa pequeña comenta que el trimestre irá 'bien'"</div>
+        <ul style="margin-top:4px;">
+          <li style="color:#7d8e9e; font-size:12px;">No toca política monetaria ni geopolítica</li>
+          <li style="color:#7d8e9e; font-size:12px;">Empresa de baja capitalización, impacto de mercado mínimo</li>
+          <li style="color:#7d8e9e; font-size:12px;"><b>Veredicto Hermes 4:</b> descartada — bajo impacto</li>
+        </ul>
+        <span class="time">17:02</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ============ NOTA SOBRE HERMES 4 ============ -->
+<div class="recos">
+  <h2>🧠 <span>Hermes 4 como cerebro del agente</span></h2>
+  <ul>
+    <li><b>Razonamiento híbrido activado</b> con etiquetas <code>&lt;think&gt;</code>: el agente piensa paso a paso antes de decidir si una noticia es de alto impacto. <span class="new">AHORA</span></li>
+    <li><b>Filtro inteligente de 2 pasos</b>: relevancia → impacto. Solo las noticias que realmente pueden mover el mercado llegan a tu canal. Las demás se descartan en silencio (ejemplo visible arriba). <span class="new">AHORA</span></li>
+    <li><b>Disponible vía OpenRouter</b>: variantes 14B (rápida/gratis), 70B (balance), 405B (máxima potencia). Lo eliges en el dashboard según tu presupuesto y velocidad. <span class="new">AHORA</span></li>
+    <li><b>Memoria entre días</b> (Fase 2): el agente recordará "ayer CPI salió alto", "Powell fue halcún la semana pasada" para enriquecer cada análisis. Mejora con el tiempo sin que toques nada.</li>
+    <li><b>Pocas negativas, alta steerability</b>: característica de Hermes 4 → el agente responde a tus consultas ad-hoc sin bloqueos innecesarios.</li>
+  </ul>
+</div>
+
+<!-- ============ RECOMENDACIONES ============ -->
+<div class="recos">
+  <h2>💡 <span>Mis recomendaciones</span> para darle más presencia y profesionalismo</h2>
+  <ul>
+    <li><b>Encabezados de impacto claros</b> con etiqueta de color: ALTO IMPACTO (rojo) / MEDIO (naranja). Ya incluido. <span class="new">HECHO</span></li>
+    <li><b>Contexto de la noticia</b> (1-2 líneas) para que tu comunidad entienda de qué va sin salir de Telegram. <span class="new">HECHO</span></li>
+    <li><b>Enlace clickeable a la fuente</b> en cada noticia (Investing, Yahoo, Bloomberg...) para profundizar. <span class="new">HECHO</span></li>
+    <li><b>Botones interactivos</b> debajo de las alertas ("Ver análisis", "Más noticias"). Telegram los soporta de verdad y dan dinamismo. <span class="new">HECHO</span></li>
+    <li><b>Hashtags</b> al final (#CPI #Fed) → tu comunidad puede hacer clic y filtrar temas en el canal.</li>
+    <li><b>Disclaimer legal</b> ("no es asesoría financiera") → protege tu canal y da seriedad.</li>
+    <li><b>Sello de confianza</b> con el % de sentimiento → refuerza que es análisis, no opinión al aire.</li>
+    <li><b>Avatar y nombre de canal personalizados</b> (ej. tu logo + "Alertas de [tu marca]") → identidad de marca.</li>
+    <li><b>Doble horario</b> si tu comunidad es global (ej. "09:30 NY · 15:30 ES") → más útil e internacional.</li>
+    <li><b>Resumen ejecutivo arriba</b> ("3 eventos de alto impacto hoy") → captas la atención en 2 segundos.</li>
+    <li><b>Mención de sectores relacionados</b> (IA, semiconductores, energía) → tu comunidad ve el efecto dominó.</li>
+    <li><b>Bloque "lo más esperado hoy"</b> destacando el evento #1 con borde dorado → foco en lo crítico.</li>
+  </ul>
+</div>
+
+</body>
+</html>

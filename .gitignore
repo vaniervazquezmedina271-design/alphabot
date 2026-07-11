@@ -1,0 +1,36 @@
+# === CREDENCIALES (NUNCA subir) ===
+.env
+.env.local
+*.key
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# === Datos del agente (cache local) ===
+data/cache/
+data/history/
+data/backup/
+
+# === OS ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# === ZCode (archivos internos del agente) ===
+.zcode/

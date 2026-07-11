@@ -1,0 +1,1 @@
+"""Pestañas del dashboard Streamlit."""

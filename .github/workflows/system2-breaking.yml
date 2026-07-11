@@ -1,0 +1,47 @@
+name: Sistema 2 — Alertas horarias
+
+# ============================================================
+#  Alertas en tiempo real + revisión de Telegram.
+#  Corre cada hora, 24/7.
+#  En cada ejecución:
+#    1. Revisa Telegram (comandos, lenguaje natural, audios)
+#    2. Busca noticias nuevas, analiza solo las no vistas (cache)
+#    3. Envía alertas de alto impacto a Telegram
+# ============================================================
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # cada hora, 24/7
+  workflow_dispatch:
+
+jobs:
+  breaking-alerts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write   # necesario para commitear watchlist/config
+
+    steps:
+      - name: 📥 Descargar código
+        uses: actions/checkout@v4
+
+      - name: 🐍 Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: 📦 Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 🚨 Ejecutar alertas + revisar Telegram
+        run: python run_report.py --breaking --no-reasoning
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_USER_ID: ${{ secrets.TELEGRAM_USER_ID }}

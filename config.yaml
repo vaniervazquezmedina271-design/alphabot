@@ -1,0 +1,80 @@
+active:
+  provider: Groq
+  model: llama-3.3-70b-versatile
+  temperature: 0.3
+  max_tokens: 1500
+  reasoning: true
+sources:
+  forex_factory:
+    enabled: true
+  yahoo_calendar:
+    enabled: true
+  finviz_calendar:
+    enabled: true
+  investing:
+    enabled: true
+  yahoo_finance:
+    enabled: true
+  finviz:
+    enabled: true
+  bloomberg_rss:
+    enabled: true
+filter:
+  min_stars: 2
+  breaking_min_score: 70
+failover:
+  enabled: true
+  providers:
+  - provider: Cerebras
+    model: gpt-oss-120b
+  - provider: Google Gemini
+    model: gemini-flash-lite-latest
+watchlist:
+  enabled: true
+  min_score_watchlist: 55
+  companies:
+  - ticker: AAPL
+    name: Apple
+    aliases:
+    - Apple Inc
+    - iPhone
+    - Tim Cook
+  - ticker: NVDA
+    name: Nvidia
+    aliases: []
+  - ticker: MSFT
+    name: Microsoft
+    aliases: []
+  - ticker: AMZN
+    name: Amazon
+    aliases: []
+  - ticker: META
+    name: Meta
+    aliases:
+    - Facebook
+  - ticker: GOOGL
+    name: Google
+    aliases:
+    - Alphabet
+  - ticker: TSLA
+    name: Tesla
+    aliases:
+    - Elon Musk
+  - ticker: JPM
+    name: JPMorgan Chase
+    aliases: []
+  - ticker: NFLX
+    name: Netflix
+    aliases: []
+  - ticker: PLTR
+    name: Palantir
+    aliases: []
+  - ticker: UNH
+    name: UnitedHealth Group
+    aliases: []
+schedule:
+  report_time: 08:00
+  timezone: America/New_York
+telegram:
+  parse_mode: Markdown
+language: es
