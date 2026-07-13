@@ -137,3 +137,12 @@ No es un cambio de código: si quieres frecuencia alta en la nube sin gastar la 
 
 ### Sobre el seguimiento del Sistema 1 (results_tracker)
 Funciona: envía la actualización cuando el evento tiene **valor numérico real** (ej. Monthly Budget Statement con déficit real -120.0B, beat). Los **discursos de la Fed no tienen dato numérico**, por eso no generan actualización (no hay resultado que comparar). Es el comportamiento correcto por diseño.
+
+
+---
+
+## 13 de julio, 2026 — Máximo 1 alerta por ticker por ejecución
+
+**Problema:** llegaban 2 alertas del mismo activo (ej. USO) porque eran titulares distintos de webs distintas sobre el mismo tema (petróleo), redactados diferente, y el dedup por similitud no los juntaba.
+
+**Arreglo (`src/report.py` → `run_breaking_alerts`, PASO 3):** ahora, entre las noticias que pasan el umbral, se envía como **máximo 1 alerta por ticker** en cada ejecución, quedándose con la de **mayor confianza**. Las demás del mismo ticker se omiten (no se marcan como enviadas, así que si en la siguiente ejecución siguen siendo relevantes, pueden salir). Elimina los duplicados de tema aunque los titulares sean distintos.

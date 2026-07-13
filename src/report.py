@@ -473,8 +473,11 @@ def run_breaking_alerts(reasoning: bool = False, max_news: int = 15) -> int:
                 analyzed_cache[get_sent_hash(it.title)] = analysis
         save_analyzed_cache(analyzed_cache)
 
-    # PASO 3 — Decidir y enviar
-    sent_count = 0
+    # PASO 3a — Evaluar candidatos y quedarse con los que pasan el umbral.
+    #   - Empresa de watchlist → umbral reducido (55)
+    #   - ETF de materia prima/apalancado (alias genéricos) → umbral estricto (anti-ruido)
+    #   - Sin watchlist → umbral normal (70)
+    aprobadas: list[dict] = []
     for item, h, toks in candidates:
         analysis = analyzed_cache.get(h)
         if not analysis or not isinstance(analysis, dict):
@@ -483,35 +486,48 @@ def run_breaking_alerts(reasoning: bool = False, max_news: int = 15) -> int:
         puede_mover = analysis.get("puede_mover_mercado", False)
         confianza = analysis.get("confianza", 0)
 
-        # Umbral dinámico:
-        #  - Empresa de watchlist → umbral reducido (55)
-        #  - ETF de materia prima/apalancado (alias genéricos) → umbral estricto (anti-ruido)
-        #  - Sin watchlist → umbral normal (70)
         company = match_company(item)
         if company:
-            if is_noisy_etf(company.get("ticker", "")):
-                threshold = max(wl_min_score, commodity_min)
-            else:
-                threshold = wl_min_score
+            threshold = max(wl_min_score, commodity_min) if is_noisy_etf(company.get("ticker", "")) else wl_min_score
         else:
             threshold = min_score
 
         if puede_mover and confianza >= threshold:
-            entry = {"item": item, "analysis": analysis}
-            alert_text = format_breaking_alert(entry)
-
-            tag = f" 🎯{company['ticker']}" if company else ""
-            print(f"  🚨 ALTO IMPACTO ({confianza}%, umbral {threshold}){tag} → enviando a Telegram")
-            ok = send_to_telegram(alert_text)
-            if ok:
-                sent_count += 1
-                sent_hashes.add(h)
-                sent_token_sets.append(toks)
-                save_sent_alerts(sent_hashes)
-                # Backup automático de la alerta enviada
-                save_alert_backup(item.to_dict(), analysis, alert_text)
+            aprobadas.append({
+                "item": item, "h": h, "toks": toks, "analysis": analysis,
+                "company": company, "confianza": confianza, "threshold": threshold,
+            })
         else:
             print(f"  ✗ Descartada (impacto={confianza}%, umbral={threshold}, mover={puede_mover})")
+
+    # PASO 3b — Enviar como MÁXIMO 1 alerta por ticker en esta ejecución,
+    # quedándonos con la de MAYOR confianza. Evita 2 alertas del mismo activo
+    # (ej. dos noticias de petróleo distintas que mapean a USO).
+    aprobadas.sort(key=lambda a: -a["confianza"])
+    sent_count = 0
+    tickers_enviados: set = set()
+    for a in aprobadas:
+        company = a["company"]
+        ticker = company["ticker"] if company else None
+        if ticker and ticker in tickers_enviados:
+            print(f"  ⏭️ Omitida: ya se envió una alerta de {ticker} en esta ejecución "
+                  f"({a['confianza']}%): {a['item'].title[:45]}...")
+            continue
+
+        entry = {"item": a["item"], "analysis": a["analysis"]}
+        alert_text = format_breaking_alert(entry)
+        tag = f" 🎯{ticker}" if ticker else ""
+        print(f"  🚨 ALTO IMPACTO ({a['confianza']}%, umbral {a['threshold']}){tag} → enviando a Telegram")
+        ok = send_to_telegram(alert_text)
+        if ok:
+            sent_count += 1
+            if ticker:
+                tickers_enviados.add(ticker)
+            sent_hashes.add(a["h"])
+            sent_token_sets.append(a["toks"])
+            save_sent_alerts(sent_hashes)
+            # Backup automático de la alerta enviada
+            save_alert_backup(a["item"].to_dict(), a["analysis"], alert_text)
 
     print(f"\n📊 {sent_count} alertas enviadas | {llm_calls} llamadas LLM (lote) | {cache_hits} cache hits (tokens ahorrados)")
     return sent_count
