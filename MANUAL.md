@@ -1,7 +1,16 @@
 # 📖 Manual de Instrucciones — AlphaBot (Agente de Búsqueda Financiera)
 
-> **Última actualización:** 10 de julio, 2026
+> **Última actualización:** 13 de julio, 2026
 > **Ubicación del proyecto:** `C:\VANIER\AGENTE DE BUSQUEDA`
+
+> **📌 Cambios recientes (13 jul 2026):**
+> - **Sistema 1** ahora usa **SOLO el calendario de Finviz** (se quitó el filtro de "relevancia USA" que borraba eventos válidos; todos los eventos de Finviz ya son de EE.UU.).
+> - **Sistema 2** trabaja en modo **solo watchlist**: envía únicamente noticias de tu lista de empresas (flag `watchlist.only`).
+> - **Deduplicación mejorada**: si la misma noticia sale en varias webs, se publica una sola vez (la fuente de mayor prioridad).
+> - **Mensajes viejos**: el bot ya no republica mensajes antiguos (filtro de antigüedad + confirmación de Telegram).
+> - **Bot local** (`bot_local.py`) ahora corre **ambos sistemas** en tiempo real, no solo comandos.
+> - **Nube**: Sistema 2 pasó de cada hora a **cada 15 minutos** (configurable).
+> - **Terminal**: se recomienda **PowerShell 7** (ya configurado como predeterminado del proyecto).
 
 ---
 
@@ -216,11 +225,13 @@ Se abre en http://localhost:8501 con 5 pestañas:
 
 | Aspecto | Detalle |
 |---------|---------|
-| **Qué hace** | Scrapea 3 calendarios económicos (Forex Factory, Yahoo Finance, Finviz) |
-| **Filtra** | Eventos de hoy relevantes para USA con 2+ estrellas |
+| **Qué hace** | Scrapea **solo el calendario económico de Finviz** |
+| **Filtra** | Eventos de hoy con **2+ estrellas** (NO filtra por país: el calendario de Finviz ya es de EE.UU.) |
 | **Cuándo corre** | Entre 7:00 y 8:59 AM hora de Nueva York, una vez al día |
 | **Token saving** | Una sola llamada al LLM (batch de hasta 10 eventos) |
 | **Estrellas** | Las que pone el calendario web (NO las inventa el LLM) |
+
+> **Importante:** la "relevancia para EE.UU." es peculiaridad del **Sistema 2** (donde llegan noticias de cualquier tema y hay que filtrar las que mueven el mercado americano). El **Sistema 1** NO filtra por país porque el calendario de Finviz ya trae únicamente eventos de EE.UU. Antes había un filtro que exigía moneda "USD" y, como Finviz no rellena ese campo en discursos de la Fed, borraba todos los eventos y el reporte salía vacío. Ese filtro se eliminó.
 
 **Formato "Modelo A" con noticias colapsables:**
 - Cada noticia se muestra como titular visible + detalle plegado ("Mostrar más")

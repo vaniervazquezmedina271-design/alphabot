@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 import tempfile
 from pathlib import Path
 
@@ -43,6 +44,18 @@ OFFSET_FILE: Path = CACHE_DIR / "telegram_offset.txt"
 TRIGGER_FILE: Path = CACHE_DIR / "telegram_trigger.txt"
 VOICE_DIR: Path = CACHE_DIR / "voice"
 VOICE_DIR.mkdir(parents=True, exist_ok=True)
+
+# Antigüedad máxima (segundos) de un mensaje para procesarlo.
+# Evita que el bot republique mensajes VIEJOS en el canal cuando la nube
+# arranca de cero (el offset no persiste entre runs de GitHub Actions) o
+# cuando el bot local llevaba un rato apagado.
+# Solo se procesan mensajes recientes ("los que le mandan en el momento").
+# Configurable con la variable de entorno TELEGRAM_MAX_MSG_AGE_SEC.
+def _max_msg_age() -> int:
+    try:
+        return int(os.environ.get("TELEGRAM_MAX_MSG_AGE_SEC", "600"))
+    except (ValueError, TypeError):
+        return 600
 
 
 # ============================================================
@@ -122,6 +135,17 @@ def fetch_updates() -> list[dict]:
             max_update_id = max(max_update_id, update_id)
             continue
 
+        # Anti-mensajes-viejos: NO procesar mensajes antiguos.
+        # Evita que la nube (offset no persiste entre runs) o el bot local
+        # tras estar apagado republiquen mensajes viejos en el canal.
+        # Solo se atienden mensajes recientes ("los que le mandan en el momento").
+        msg_date = msg.get("date", 0) or 0
+        age = time.time() - msg_date
+        if msg_date and age > _max_msg_age():
+            print(f"  ⏳ Mensaje viejo ignorado ({int(age)}s de antigüedad)")
+            max_update_id = max(max_update_id, update_id)
+            continue
+
         # Detectar tipo de mensaje
         if msg.get("voice"):
             file_id = msg["voice"].get("file_id", "")
@@ -195,6 +219,15 @@ def fetch_updates() -> list[dict]:
 
     if max_update_id > last_offset:
         _save_offset(max_update_id)
+        # Confirmar los updates en el servidor de Telegram (marca offset como
+        # visto). CLAVE para la nube: como el offset NO persiste entre runs de
+        # GitHub Actions, sin esta confirmación cada ejecución volvería a
+        # recibir los mismos mensajes y los republicaría. Al confirmar con
+        # offset = max+1, Telegram descarta esos updates y ya no se reentregan.
+        try:
+            requests.get(url, params={"offset": max_update_id + 1, "timeout": 0}, timeout=10)
+        except Exception:
+            pass
 
     return messages
 

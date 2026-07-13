@@ -26,6 +26,14 @@ from __future__ import annotations
 import sys
 import os
 
+# En Windows, la consola/redirección usa cp1252 por defecto y los emojis (📊, 🚨)
+# provocan UnicodeEncodeError. Forzar UTF-8 para que no crashee.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
 

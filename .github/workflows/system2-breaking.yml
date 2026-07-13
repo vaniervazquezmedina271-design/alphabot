@@ -11,7 +11,18 @@ name: Sistema 2 — Alertas horarias
 
 on:
   schedule:
-    - cron: '0 * * * *'   # cada hora, 24/7
+    # Cada 5 minutos, 24/7 (mínimo práctico de GitHub Actions). Máximo tiempo real
+    # en la nube. Requiere repositorio PÚBLICO (minutos ilimitados); en repo
+    # privado gastaría ~8.600 min/mes y superaría el tope gratis de 2.000.
+    # VARIANTES (cambia el número tras la barra):
+    #   '*/5  * * * *'  -> cada 5 min   << ACTUAL (repo público)
+    #   '*/10 * * * *'  -> cada 10 min  (~4.300 min/mes)
+    #   '*/15 * * * *'  -> cada 15 min  (~2.880 min/mes)
+    #   '*/30 * * * *'  -> cada 30 min  (~1.440 min/mes, cabe en gratis privado)
+    #   '0 * * * *'     -> cada hora    (~720 min/mes, el original)
+    # NOTA: aunque GitHub sea gratis, el LLM tiene su propio rate limit; el cache
+    # de 48h, el análisis por lotes y el failover lo mantienen bajo control.
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 jobs:

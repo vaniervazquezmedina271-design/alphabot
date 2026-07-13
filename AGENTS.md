@@ -21,8 +21,10 @@ Recopila, filtra, analiza y envía noticias que afectan a la economía americana
 
 | Sistema | Nombre | Función | Horario | Fuentes |
 |---------|--------|---------|---------|---------|
-| **1** | Sector Económico del Día | Reporte diario de eventos macro programados (calendario) | 7-8 AM NY | Forex Factory, Yahoo Calendar, Finviz Calendar |
-| **2** | Último Minuto | Alertas en tiempo real de noticias que van saliendo | Cada hora 24/7 | Investing, Yahoo Finance, Finviz, Bloomberg RSS |
+| **1** | Sector Económico del Día | Reporte diario de eventos macro programados (calendario) | 7-8 AM NY | **SOLO Finviz Calendar** |
+| **2** | Último Minuto | Alertas en tiempo real, **solo de la watchlist** | Cada 15 min (nube) / al instante (local) | Investing, Yahoo Finance, Finviz, Bloomberg RSS |
+
+> **Cambios 13 jul 2026:** Sistema 1 = solo Finviz (sin filtro de país; se eliminó `_is_us_relevant` del pipeline diario porque borraba eventos válidos). Sistema 2 = modo `watchlist.only` (solo noticias de la lista) + dedup entre fuentes por similitud de tokens con prioridad de fuente. Anti-mensajes-viejos en `fetch_updates` (filtro de antigüedad + confirmación server-side). `bot_local.py` corre ambos sistemas. Cron Sistema 2 cada 15 min. Watchlist reemplazada por 40 tickers del usuario.
 
 ---
 

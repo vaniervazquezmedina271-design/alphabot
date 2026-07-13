@@ -3,17 +3,18 @@ Report — orquestador del pipeline.
 
 DOS SISTEMAS SEPARADOS:
 
-1. REPORTE DIARIO (8am): SOLO calendario económico (Forex Factory, Yahoo, Finviz).
+1. REPORTE DIARIO (8am): SOLO calendario económico de Finviz.
    Eventos programados con hora fija y estrellas (IPC, Fed, BCE, NFP...).
    Se agrupan en un solo mensaje. NO usa noticias en tiempo real.
 
 2. ALERTAS EN TIEMPO REAL: noticias que van saliendo (CNBC, Yahoo, Bloomberg, Finviz).
    NO se acumulan: cada una se envía al instante cuando aparece.
-   Solo alto impacto: mega-contratos, fusiones, movimientos grandes, Trump, etc.
+   Solo alto impacto de la watchlist del usuario.
 """
 from __future__ import annotations
 
 import json
+import re
 import hashlib
 from datetime import datetime
 from pathlib import Path
@@ -28,10 +29,10 @@ from .sources.yahoo_calendar import YahooCalendarSource
 from .sources.finviz import FinvizSource
 from .sources.finviz_calendar import FinvizCalendarSource
 from .sources.bloomberg_rss import BloombergRSSSource
-from .analyzer import analyze_batch, analyze_single
+from .analyzer import analyze_batch, analyze_single, analyze_batch_breaking
 from .formatter import format_daily_report, format_breaking_alert
 from .notifier import send_to_telegram
-from .watchlist import match_company, get_watchlist_min_score, load_watchlist
+from .watchlist import match_company, get_watchlist_min_score, load_watchlist, is_noisy_etf
 from .backup import save_report_backup, save_alert_backup
 from .results_tracker import track_events_from_report, run_results_tracking
 
@@ -60,6 +61,80 @@ ALL_SOURCES = {**CALENDAR_SOURCES, **NEWS_SOURCES}
 
 
 # ============================================================
+#  HEALTH-CHECK DE FUENTES (avisa si una fuente deja de traer noticias)
+# ============================================================
+
+HEALTH_FILE = CACHE_DIR / "source_health.json"
+HEALTH_ZERO_THRESHOLD = 3   # nº de ejecuciones seguidas con 0 ítems para avisar
+
+
+def _load_health() -> dict:
+    if HEALTH_FILE.exists():
+        try:
+            with open(HEALTH_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_health(state: dict) -> None:
+    try:
+        with open(HEALTH_FILE, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def _record_source_health(name: str, count: int) -> None:
+    """
+    Registra cuántos ítems trajo una fuente. Lleva la cuenta de ejecuciones
+    seguidas con 0 resultados. Si vuelve a traer datos, se resetea.
+    """
+    state = _load_health()
+    entry = state.get(name, {"zeros": 0, "alerted": False})
+    if count > 0:
+        entry = {"zeros": 0, "alerted": False}
+    else:
+        entry["zeros"] = entry.get("zeros", 0) + 1
+    state[name] = entry
+    _save_health(state)
+
+
+def notify_unhealthy_sources() -> int:
+    """
+    Avisa por Telegram (una sola vez) de las fuentes que llevan varias
+    ejecuciones seguidas trayendo 0 noticias. Devuelve cuántas se avisaron.
+    Evita "silencios" sin que te enteres (como pasó con el Sistema 1).
+    """
+    state = _load_health()
+    caidas = [
+        name for name, e in state.items()
+        if e.get("zeros", 0) >= HEALTH_ZERO_THRESHOLD and not e.get("alerted")
+    ]
+    if not caidas:
+        return 0
+
+    lista = ", ".join(caidas)
+    msg = (
+        "⚠️ <b>Aviso de fuentes</b>\n"
+        f"Estas fuentes llevan {HEALTH_ZERO_THRESHOLD}+ ejecuciones sin traer "
+        f"noticias (quizá cambiaron su web o están caídas):\n\n<code>{lista}</code>\n\n"
+        "Revisa el scraper correspondiente en <code>src/sources/</code>."
+    )
+    try:
+        send_to_telegram(msg, parse_mode="HTML")
+    except Exception:
+        pass
+
+    # Marcar como avisadas para no repetir el aviso cada ejecución
+    for name in caidas:
+        state[name]["alerted"] = True
+    _save_health(state)
+    return len(caidas)
+
+
+# ============================================================
 #  SISTEMA 1 — REPORTE DIARIO (calendario macro)
 # ============================================================
 
@@ -76,8 +151,10 @@ def fetch_calendar_sources() -> list[NewsItem]:
             src = cls()
             items = src.fetch()
             all_items.extend(items)
+            _record_source_health(name, len(items))
             print(f"  📅 {src.display_name}: {len(items)} eventos")
         except Exception as e:
+            _record_source_health(name, 0)
             print(f"  ⚠️ {name}: error {e}")
 
     return all_items
@@ -86,14 +163,11 @@ def fetch_calendar_sources() -> list[NewsItem]:
 def _is_us_relevant(item: NewsItem) -> bool:
     """
     Filtro PRELIMINAR (no estricto) para el calendario macro.
-    Descarta eventos claramente regionales que NO afectan al mercado americano
-    (PIB de UK, tasa de Japón, inflación de la zona euro sin impacto USA).
+    Descarta eventos claramente regionales que NO afectan al mercado americano.
 
-    Las NOTICIAS en tiempo real NO se filtran aquí: el LLM decide si afectan a USA.
-    Una noticia de China sobre aranceles a Apple pasaría este filtro por título,
-    pero aunque no lo pase, el analyzer (LLM) tiene la última palabra.
-
-    Esto solo evita gastar tokens del LLM en eventos obvios de otra región.
+    NOTA: ya NO se usa en el Sistema 1 (el calendario de Finviz es solo de
+    EE.UU.). Se conserva por compatibilidad y por si vuelve a activarse otra
+    fuente de calendario multi-país en el futuro.
     """
     currency = (item.currency or "").upper().strip()
     country = (item.country or "").strip()
@@ -103,11 +177,8 @@ def _is_us_relevant(item: NewsItem) -> bool:
         return True
 
     # Fuentes de NOTICIAS en tiempo real → siempre relevantes (el LLM decide después)
-    # Pero las fuentes de CALENDARIO (Forex Factory, Yahoo Calendar, Finviz Calendar) sí se filtran
-    # porque traen eventos de todos los países.
     source = (item.source or "").lower()
     is_calendar_source = "calendar" in source or "forex factory" in source
-    # Si no es fuente de calendario, es una noticia → pasa siempre (el LLM decide)
     if not is_calendar_source:
         if any(s in source for s in ["cnbc", "marketwatch", "yahoo", "bloomberg", "finviz"]):
             return True
@@ -118,39 +189,37 @@ def _is_us_relevant(item: NewsItem) -> bool:
         "opec", "china tariff", "chinese tariff", "trade war",
         "european union", "eu regulation", "eu tech",
         "sanctions", "semiconductor", "chips",
-        "brexit", "uk economy",  # a veces afecta
+        "brexit", "uk economy",
     ]
     if any(kw in title for kw in intl_relevant):
         return True
 
-    # Eventos macro de otros países (UK GDP, Japan rate, EZ CPI) → descartar
-    # El LLM no los verá, pero rara vez mueven la bolsa USA
     return False
 
 
 def generate_daily_report(reasoning: bool = True) -> tuple[str, list[dict]]:
     """
     SISTEMA 1 — Reporte diario de eventos macro programados.
-    Usa SOLO el calendario económico (Forex Factory, Yahoo, Finviz).
-    Scrapea calendarios → filtra USA → filtra estrellas → analiza → formatea.
+    Usa SOLO el calendario económico de Finviz.
+    Scrapea el calendario → filtra por estrellas → analiza → formatea.
+
+    NOTA: el calendario de Finviz ya trae solo eventos de EE.UU., por lo que
+    NO se filtra por país aquí. La relevancia para EE.UU. es una peculiaridad
+    del Sistema 2 (noticias en tiempo real), NO del Sistema 1.
 
     Devuelve (texto_formateado, lista_de_entradas).
     """
     cfg = load_config()
     min_stars = cfg.get("filter", {}).get("min_stars", 2)
 
-    print("📅 Scrapeando calendarios macro (Sistema 1)...")
+    print("📅 Scrapeando calendario macro de Finviz (Sistema 1)...")
     calendar_items = fetch_calendar_sources()
     calendar_items = deduplicate(calendar_items)
 
-    # FILTRO 1 (preliminar): descartar eventos claramente regionales que no afectan a USA
-    # El LLM tiene la última palabra, esto solo ahorra tokens.
-    relevant_calendar = [it for it in calendar_items if _is_us_relevant(it)]
-    print(f"  🇺🇸 Calendario relevante: {len(relevant_calendar)} de {len(calendar_items)} eventos")
-
-    # FILTRO 2: eventos con estrellas (2-3) del calendario
-    # Solo calendario económico. Sin relleno de noticias ni eventos de menor impacto.
-    items = [it for it in relevant_calendar if it.stars >= min_stars]
+    # ÚNICO FILTRO: impacto por estrellas (2+). Todos los eventos del calendario
+    # de Finviz son de EE.UU., así que no se descarta nada por país.
+    items = [it for it in calendar_items if it.stars >= min_stars]
+    print(f"  ⭐ {len(items)} de {len(calendar_items)} eventos con {min_stars}+ estrellas")
 
     if not items:
         return "📊 No hay eventos macro de alto impacto programados hoy para el mercado americano.", []
@@ -181,7 +250,6 @@ def generate_daily_report(reasoning: bool = True) -> tuple[str, list[dict]]:
     save_report_backup(report_text, entries)
 
     # Registrar eventos para seguimiento de resultados (Sección 1)
-    # Después de que cada evento ocurra, se enviará un mensaje con los resultados reales
     track_events_from_report(entries)
 
     return report_text, entries
@@ -191,6 +259,9 @@ def run_and_send(reasoning: bool = True) -> bool:
     """SISTEMA 1 — Genera el reporte diario y lo envía a Telegram."""
     report_text, entries = generate_daily_report(reasoning)
     print(f"\n📊 Reporte generado ({len(report_text)} chars, {len(entries)} eventos)")
+
+    # Avisar si alguna fuente de calendario lleva varias ejecuciones sin datos
+    notify_unhealthy_sources()
 
     ok = send_to_telegram(report_text)
     if ok:
@@ -217,16 +288,22 @@ def fetch_news_sources() -> list[NewsItem]:
             src = cls()
             items = src.fetch()
             all_items.extend(items)
+            _record_source_health(name, len(items))
             print(f"  📰 {src.display_name}: {len(items)} noticias")
         except Exception as e:
+            _record_source_health(name, 0)
             print(f"  ⚠️ {name}: error {e}")
 
     return all_items
 
 
 def get_sent_hash(title: str) -> str:
-    """Hash de una noticia para saber si ya fue enviada."""
-    return hashlib.md5(title.lower().strip()[:100].encode()).hexdigest()
+    """
+    Firma de una noticia para saber si ya fue enviada.
+    Usa la firma de tokens (no el título exacto) para que la misma noticia
+    publicada por otra fuente NO se reenvíe en la siguiente ejecución.
+    """
+    return news_signature(title)
 
 
 def _ny_today() -> str:
@@ -239,17 +316,33 @@ def _ny_today() -> str:
         return datetime.now().strftime("%Y-%m-%d")
 
 
+def _ny_date_offset(days_ago: int) -> str:
+    """Fecha (YYYY-MM-DD) de hace `days_ago` días en hora de Nueva York."""
+    try:
+        from dateutil import tz
+        from datetime import timedelta
+        d = datetime.now(tz.gettz("America/New_York")) - timedelta(days=days_ago)
+        return d.strftime("%Y-%m-%d")
+    except Exception:
+        from datetime import timedelta
+        return (datetime.now() - timedelta(days=days_ago)).strftime("%Y-%m-%d")
+
+
 def load_sent_alerts() -> set:
-    """Carga las noticias ya enviadas hoy (para no repetir)."""
-    today = _ny_today()
-    cache_file = CACHE_DIR / f"sent_alerts_{today}.json"
-    if cache_file.exists():
-        try:
-            with open(cache_file, "r", encoding="utf-8") as f:
-                return set(json.load(f))
-        except Exception:
-            return set()
-    return set()
+    """
+    Carga las noticias ya enviadas en las últimas ~48h (hoy + ayer, hora NY).
+    Así una noticia enviada anoche no se repite hoy solo porque cambió el día.
+    """
+    sent: set = set()
+    for days in (1, 0):  # ayer y hoy
+        cache_file = CACHE_DIR / f"sent_alerts_{_ny_date_offset(days)}.json"
+        if cache_file.exists():
+            try:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    sent.update(json.load(f))
+            except Exception:
+                pass
+    return sent
 
 
 def save_sent_alerts(sent: set) -> None:
@@ -269,19 +362,21 @@ def save_sent_alerts(sent: set) -> None:
 
 def load_analyzed_cache() -> dict:
     """
-    Cache de TODAS las noticias analizadas hoy (no solo enviadas).
-    Devuelve {hash: analysis_dict}.
-    Evita re-analizar con el LLM noticias que ya fueron procesadas.
+    Cache de noticias analizadas en las últimas ~48h (hoy + ayer, hora NY).
+    Devuelve {firma: analysis_dict}.
+    Muchas noticias siguen "vivas" al día siguiente; con 48h no se re-analizan
+    (ahorro de tokens). El cache de HOY tiene prioridad sobre el de ayer.
     """
-    today = _ny_today()
-    cache_file = CACHE_DIR / f"analyzed_{today}.json"
-    if cache_file.exists():
-        try:
-            with open(cache_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
+    merged: dict = {}
+    for days in (1, 0):  # ayer primero; hoy sobrescribe
+        cache_file = CACHE_DIR / f"analyzed_{_ny_date_offset(days)}.json"
+        if cache_file.exists():
+            try:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    merged.update(json.load(f))
+            except Exception:
+                pass
+    return merged
 
 
 def save_analyzed_cache(cache: dict) -> None:
@@ -298,27 +393,30 @@ def save_analyzed_cache(cache: dict) -> None:
 def run_breaking_alerts(reasoning: bool = False, max_news: int = 15) -> int:
     """
     SISTEMA 2 — Procesa noticias en tiempo real.
-    Cada noticia NUEVA se analiza individualmente:
-      - Si es de alto impacto → se envía AL INSTANTE a Telegram
-      - Si no → se descarta (no se acumula)
 
     Optimizaciones de tokens:
-      - Cache de analizadas: no re-analiza noticias ya procesadas hoy
-      - Watchlist: empresas seguidas tienen umbral reducido (55 vs 70)
-      - Prioridad: noticias de empresas en watchlist se analizan primero
+      - Dedup entre fuentes ANTES del LLM (una noticia = una vez)
+      - Cache de analizadas (48h): no re-analiza noticias ya procesadas
+      - Análisis EN LOTE: 1 llamada por cada ~5 noticias nuevas
+      - Modo solo-watchlist: solo noticias de la lista del usuario
 
     max_news: máximo de noticias a analizar por ejecución (las más recientes).
     Devuelve el número de alertas enviadas.
     """
     cfg = load_config()
     min_score = cfg.get("filter", {}).get("breaking_min_score", 70)
+    commodity_min = cfg.get("filter", {}).get("commodity_min_score", 70)
     wl_min_score = get_watchlist_min_score()
+
+    only_watchlist = cfg.get("watchlist", {}).get("only", False)
 
     print("🚨 Scrapeando noticias en tiempo real (Sistema 2)...")
     items = fetch_news_sources()
+    # Avisar por Telegram si alguna fuente lleva varias ejecuciones sin traer nada
+    notify_unhealthy_sources()
     items = deduplicate(items)
 
-    # Priorizar: noticias que mencionan empresas de la watchlist van primero
+    # Watchlist: empresas seguidas por el usuario
     wl_companies = load_watchlist()
     if wl_companies:
         wl_items = []
@@ -328,54 +426,77 @@ def run_breaking_alerts(reasoning: bool = False, max_news: int = 15) -> int:
                 wl_items.append(item)
             else:
                 other_items.append(item)
-        # Watchlist primero, luego el resto
-        items = wl_items + other_items
-        if wl_items:
-            print(f"  🎯 {len(wl_items)} noticias coinciden con tu watchlist (prioridad)")
+
+        if only_watchlist:
+            # MODO SOLO-WATCHLIST: descartar todo lo que no sea de tu lista
+            items = wl_items
+            print(f"  🎯 Solo watchlist: {len(wl_items)} noticias de tu lista "
+                  f"(descartadas {len(other_items)} ajenas)")
+        else:
+            # Modo prioridad: watchlist primero, luego el resto
+            items = wl_items + other_items
+            if wl_items:
+                print(f"  🎯 {len(wl_items)} noticias coinciden con tu watchlist (prioridad)")
 
     items = items[:max_news]  # solo las más recientes (watchlist prioritarias incluidas)
 
     sent_hashes = load_sent_alerts()
     analyzed_cache = load_analyzed_cache()
-    sent_count = 0
-    cache_hits = 0
-    llm_calls = 0
+    # Conjuntos de tokens de lo ya enviado, para detectar la MISMA noticia
+    # aunque venga de otra fuente con titular distinto entre ejecuciones.
+    sent_token_sets = [set(sig.split()) for sig in sent_hashes]
 
+    # PASO 1 — Candidatos: quitar ya enviadas/equivalentes y separar las que
+    # ya están en cache de las que hay que analizar con el LLM.
+    candidates: list[tuple] = []   # [(item, h, toks)]
+    to_analyze: list[NewsItem] = []
     for item in items:
         h = get_sent_hash(item.title)
-        if h in sent_hashes:
-            continue  # ya enviada, saltar
+        toks = _title_tokens(item.title)
+        if h in sent_hashes or any(_titles_similar(toks, prev) for prev in sent_token_sets):
+            continue  # ya enviada o equivalente → saltar
+        candidates.append((item, h, toks))
+        if h not in analyzed_cache:
+            to_analyze.append(item)
 
-        # ¿Ya analizada hoy? → usar cache, NO llamar al LLM
-        if h in analyzed_cache:
-            analysis = analyzed_cache[h]
-            cache_hits += 1
-            print(f"  ♻️ Cache (sin gastar tokens): {item.title[:45]}...")
-        else:
-            # Analizar individualmente con LLM
-            company = match_company(item)
-            tag = f" 🎯{company['ticker']}" if company else ""
-            print(f"  🔍 Analizando: {item.title[:45]}...{tag}")
-            analysis = analyze_single(item, reasoning=False)
-            llm_calls += 1
+    cache_hits = len(candidates) - len(to_analyze)
 
-            if not analysis or not isinstance(analysis, dict):
-                continue
+    # PASO 2 — Analizar EN LOTE las nuevas (1 llamada por cada ~5 noticias,
+    # en vez de 1 por noticia). Gran ahorro de tokens y de tiempo.
+    llm_calls = 0
+    if to_analyze:
+        print(f"  🧠 Analizando {len(to_analyze)} noticias nuevas en lote...")
+        batch_results = analyze_batch_breaking(to_analyze, chunk_size=5)
+        llm_calls = (len(to_analyze) + 4) // 5
+        for it, analysis in zip(to_analyze, batch_results):
+            if analysis and isinstance(analysis, dict):
+                analyzed_cache[get_sent_hash(it.title)] = analysis
+        save_analyzed_cache(analyzed_cache)
 
-            # Guardar en cache para no re-analizar después
-            analyzed_cache[h] = analysis
-            save_analyzed_cache(analyzed_cache)
+    # PASO 3 — Decidir y enviar
+    sent_count = 0
+    for item, h, toks in candidates:
+        analysis = analyzed_cache.get(h)
+        if not analysis or not isinstance(analysis, dict):
+            continue
 
-        # Filtro: ¿puede mover el mercado Y tiene confianza suficiente?
         puede_mover = analysis.get("puede_mover_mercado", False)
         confianza = analysis.get("confianza", 0)
 
-        # Umbral dinámico: empresas en watchlist tienen umbral más bajo
+        # Umbral dinámico:
+        #  - Empresa de watchlist → umbral reducido (55)
+        #  - ETF de materia prima/apalancado (alias genéricos) → umbral estricto (anti-ruido)
+        #  - Sin watchlist → umbral normal (70)
         company = match_company(item)
-        threshold = wl_min_score if company else min_score
+        if company:
+            if is_noisy_etf(company.get("ticker", "")):
+                threshold = max(wl_min_score, commodity_min)
+            else:
+                threshold = wl_min_score
+        else:
+            threshold = min_score
 
         if puede_mover and confianza >= threshold:
-            # ¡ALERTA! Enviar al instante
             entry = {"item": item, "analysis": analysis}
             alert_text = format_breaking_alert(entry)
 
@@ -385,13 +506,14 @@ def run_breaking_alerts(reasoning: bool = False, max_news: int = 15) -> int:
             if ok:
                 sent_count += 1
                 sent_hashes.add(h)
+                sent_token_sets.append(toks)
                 save_sent_alerts(sent_hashes)
                 # Backup automático de la alerta enviada
                 save_alert_backup(item.to_dict(), analysis, alert_text)
         else:
             print(f"  ✗ Descartada (impacto={confianza}%, umbral={threshold}, mover={puede_mover})")
 
-    print(f"\n📊 {sent_count} alertas enviadas | {llm_calls} llamadas LLM | {cache_hits} cache hits (tokens ahorrados)")
+    print(f"\n📊 {sent_count} alertas enviadas | {llm_calls} llamadas LLM (lote) | {cache_hits} cache hits (tokens ahorrados)")
     return sent_count
 
 
@@ -404,16 +526,112 @@ def fetch_all_sources() -> list[NewsItem]:
     return fetch_calendar_sources() + fetch_news_sources()
 
 
+# ============================================================
+#  HUELLA DE NOTICIAS (dedup entre fuentes distintas)
+# ============================================================
+
+# Palabras vacías (ES + EN) que no aportan a la identidad de la noticia.
+_STOPWORDS = {
+    # inglés
+    "the", "a", "an", "of", "to", "in", "on", "for", "and", "or", "is", "are",
+    "was", "were", "as", "at", "by", "with", "from", "that", "this", "it", "its",
+    "be", "has", "have", "had", "will", "after", "over", "amid", "says", "say",
+    "new", "up", "down", "not", "no", "but", "into", "out", "than", "then",
+    "his", "her", "their", "amp", "via", "how", "why", "what", "when", "who",
+    # español
+    "el", "la", "los", "las", "un", "una", "unos", "unas", "de", "del", "y", "o",
+    "en", "con", "por", "para", "que", "se", "su", "sus", "al", "lo", "como",
+    "mas", "más", "sobre", "tras", "entre", "ante", "desde", "hasta",
+}
+
+# Prioridad de fuente: si la misma noticia aparece en varias webs, se conserva
+# la de mayor prioridad (Bloomberg > Investing/CNBC > Yahoo > Finviz).
+_SOURCE_PRIORITY = {
+    "bloomberg": 4,
+    "investing": 3,
+    "cnbc": 3,
+    "marketwatch": 3,
+    "yahoo": 2,
+    "finviz": 1,
+}
+
+
+def _source_rank(source: str) -> int:
+    s = (source or "").lower()
+    for key, rank in _SOURCE_PRIORITY.items():
+        if key in s:
+            return rank
+    return 0
+
+
+def _title_tokens(title: str) -> set[str]:
+    """
+    Extrae los tokens significativos de un titular (minúsculas, sin puntuación,
+    sin palabras vacías). Sirve para comparar noticias equivalentes que vienen
+    de fuentes distintas con titulares ligeramente diferentes.
+    """
+    t = (title or "").lower()
+    t = re.sub(r"[^a-z0-9áéíóúñü ]+", " ", t)
+    return {w for w in t.split() if len(w) > 2 and w not in _STOPWORDS}
+
+
+def _titles_similar(tokens_a: set[str], tokens_b: set[str], threshold: float = 0.6) -> bool:
+    """
+    ¿Dos titulares se refieren a la misma noticia?
+    Usa similitud de Jaccard entre sus tokens + regla de contención
+    (si el titular más corto está casi contenido en el otro).
+    """
+    if not tokens_a or not tokens_b:
+        return False
+    inter = len(tokens_a & tokens_b)
+    if inter == 0:
+        return False
+    union = len(tokens_a | tokens_b)
+    if union and inter / union >= threshold:
+        return True
+    # Contención: titular corto casi contenido en el largo (ej. una fuente resume)
+    smaller = min(len(tokens_a), len(tokens_b))
+    if smaller and inter / smaller >= 0.8:
+        return True
+    return False
+
+
+def news_signature(title: str) -> str:
+    """
+    Firma canónica de una noticia (tokens significativos ordenados, separados
+    por espacio). Dos titulares idénticos en contenido producen la misma firma.
+    Se guarda en el cache de enviadas para no repetir entre ejecuciones.
+    """
+    tokens = _title_tokens(title)
+    if not tokens:
+        return (title or "").lower().strip()
+    return " ".join(sorted(tokens))
+
+
 def deduplicate(items: list[NewsItem]) -> list[NewsItem]:
-    """Quita noticias duplicadas por título similar."""
-    seen = set()
-    unique = []
+    """
+    Quita noticias duplicadas y equivalentes (VARIANTE 2 + prioridad de fuente).
+
+    Una misma noticia publicada por varias fuentes web (Investing, Yahoo,
+    Finviz, Bloomberg) tiene titulares ligeramente distintos. Aquí se
+    comparan por similitud de tokens (no por título exacto) para que cada
+    noticia aparezca UNA SOLA VEZ. Cuando hay duplicado, se conserva la
+    fuente de mayor prioridad (Bloomberg > Investing/CNBC > Yahoo > Finviz).
+    """
+    kept: list[dict] = []  # {"tokens": set, "item": NewsItem}
     for it in items:
-        key = it.title.lower().strip()[:80]
-        if key not in seen:
-            seen.add(key)
-            unique.append(it)
-    return unique
+        toks = _title_tokens(it.title)
+        dup_idx = None
+        for i, k in enumerate(kept):
+            if _titles_similar(toks, k["tokens"]):
+                dup_idx = i
+                break
+        if dup_idx is None:
+            kept.append({"tokens": toks, "item": it})
+        elif _source_rank(it.source) > _source_rank(kept[dup_idx]["item"].source):
+            # Duplicado, pero esta fuente tiene mayor prioridad → reemplazar
+            kept[dup_idx] = {"tokens": toks, "item": it}
+    return [k["item"] for k in kept]
 
 
 def _save_history(report_text: str, entries: list[dict]) -> None:

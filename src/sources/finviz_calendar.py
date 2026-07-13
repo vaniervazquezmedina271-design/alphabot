@@ -24,6 +24,15 @@ FINVIZ_CALENDAR_URL = "https://finviz.com/calendar/economic"
 IMPORTANCE_TO_STARS = {3: 3, 2: 2, 1: 1}
 
 
+def _ny_today() -> str:
+    """Fecha de hoy (YYYY-MM-DD) en hora de Nueva York / Este de EE.UU."""
+    try:
+        from dateutil import tz
+        return datetime.now(tz.gettz("America/New_York")).strftime("%Y-%m-%d")
+    except Exception:
+        return datetime.now().strftime("%Y-%m-%d")
+
+
 class FinvizCalendarSource(BaseSource):
     name = "finviz_calendar"
     display_name = "Finviz (Calendario)"
@@ -39,7 +48,10 @@ class FinvizCalendarSource(BaseSource):
             return []
 
         entries = data.get("entries", [])
-        today = datetime.now().strftime("%Y-%m-%d")
+        # Fecha de HOY en hora de Nueva York (el calendario de Finviz está en ET).
+        # Usar la hora local del servidor fallaría en la nube (UTC) o en PCs de
+        # otra zona horaria, descartando eventos válidos del día de mercado.
+        today = _ny_today()
 
         items: list[NewsItem] = []
         for ev in entries:
@@ -55,8 +67,10 @@ class FinvizCalendarSource(BaseSource):
             time_str = _extract_time(date_str)
 
             # El ticker de Finviz incluye el país (ej. "USAINMBA" → USA)
+            # El calendario económico de Finviz es de EE.UU., así que si no se
+            # detecta el país, se asume USD/🇺🇸 (no dejarlo como 🌍 genérico).
             ticker = ev.get("ticker", "")
-            country_code = _extract_country(ticker)
+            country_code = _extract_country(ticker) or "USD"
             flag = _country_to_flag(country_code)
 
             title = ev.get("event", "").strip()

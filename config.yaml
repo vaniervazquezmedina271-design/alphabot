@@ -5,12 +5,14 @@ active:
   max_tokens: 1500
   reasoning: true
 sources:
+  # --- SISTEMA 1 (calendario macro): SOLO Finviz ---
   forex_factory:
-    enabled: true
+    enabled: false
   yahoo_calendar:
-    enabled: true
+    enabled: false
   finviz_calendar:
     enabled: true
+  # --- SISTEMA 2 (noticias en tiempo real) ---
   investing:
     enabled: true
   yahoo_finance:
@@ -22,6 +24,7 @@ sources:
 filter:
   min_stars: 2
   breaking_min_score: 70
+  commodity_min_score: 70   # umbral estricto para ETFs de materias primas (USO, SLV, GLD, URA, SOXL, TNA)
 failover:
   enabled: true
   providers:
@@ -31,50 +34,203 @@ failover:
     model: gemini-flash-lite-latest
 watchlist:
   enabled: true
+  # only: true  -> Sistema 2 SOLO envia noticias de empresas de esta lista
+  only: true
   min_score_watchlist: 55
   companies:
+  # --- Acciones ---
+  - ticker: AMZN
+    name: Amazon
+    aliases:
+    - AWS
+    - Jeff Bezos
+    - Andy Jassy
+    - Prime
   - ticker: AAPL
     name: Apple
     aliases:
     - Apple Inc
     - iPhone
     - Tim Cook
-  - ticker: NVDA
-    name: Nvidia
-    aliases: []
-  - ticker: MSFT
-    name: Microsoft
-    aliases: []
-  - ticker: AMZN
-    name: Amazon
-    aliases: []
+    - iPad
+    - Mac
+  - ticker: GOOG
+    name: Alphabet
+    aliases:
+    - Google
+    - YouTube
+    - Android
+    - Sundar Pichai
   - ticker: META
-    name: Meta
+    name: Meta Platforms
     aliases:
     - Facebook
-  - ticker: GOOGL
-    name: Google
+    - Instagram
+    - Zuckerberg
+    - WhatsApp
+    - Metaverse
+  - ticker: MSFT
+    name: Microsoft
     aliases:
-    - Alphabet
+    - Satya Nadella
+    - Windows
+    - Azure
+    - Copilot
+  - ticker: NFLX
+    name: Netflix
+    aliases: []
   - ticker: TSLA
     name: Tesla
     aliases:
     - Elon Musk
-  - ticker: JPM
-    name: JPMorgan Chase
-    aliases: []
-  - ticker: NFLX
-    name: Netflix
-    aliases: []
+    - Model 3
+    - Model Y
+    - Cybertruck
   - ticker: PLTR
     name: Palantir
     aliases: []
-  - ticker: UNH
-    name: UnitedHealth Group
+  - ticker: IBM
+    name: IBM
+    aliases:
+    - International Business Machines
+  - ticker: ORCL
+    name: Oracle
     aliases: []
+  - ticker: NOW
+    name: ServiceNow
+    aliases:
+    - Service Now
+  - ticker: AMD
+    name: Advanced Micro Devices
+    aliases:
+    - Ryzen
+    - Radeon
+    - Lisa Su
+  - ticker: MU
+    name: Micron
+    aliases:
+    - Micron Technology
+  - ticker: NVDA
+    name: Nvidia
+    aliases:
+    - Jensen Huang
+    - GeForce
+  - ticker: QCOM
+    name: Qualcomm
+    aliases:
+    - Snapdragon
+  - ticker: AVGO
+    name: Broadcom
+    aliases: []
+  - ticker: INTC
+    name: Intel
+    aliases: []
+  - ticker: DASH
+    name: DoorDash
+    aliases:
+    - Door Dash
+  - ticker: LYFT
+    name: Lyft
+    aliases: []
+  - ticker: UBER
+    name: Uber
+    aliases: []
+  - ticker: HD
+    name: Home Depot
+    aliases:
+    - The Home Depot
+  - ticker: LOW
+    name: Lowe's
+    aliases:
+    - Lowes
+    - Lowe's Companies
+  - ticker: WMT
+    name: Walmart
+    aliases:
+    - Wal-Mart
+  - ticker: AXP
+    name: American Express
+    aliases:
+    - Amex
+  - ticker: COIN
+    name: Coinbase
+    aliases: []
+  - ticker: PYPL
+    name: PayPal
+    aliases: []
+  - ticker: MA
+    name: Mastercard
+    aliases:
+    - Master Card
+  - ticker: C
+    name: Citigroup
+    aliases:
+    - Citi
+    - Citibank
+  - ticker: V
+    name: Visa
+    aliases: []
+  # --- ETFs / Indices ---
+  - ticker: SOXL
+    name: Direxion Semiconductor Bull 3X (ETF semiconductores)
+    aliases:
+    - semiconductor
+    - semiconductors
+    - chip stocks
+  - ticker: DIA
+    name: SPDR Dow Jones ETF
+    aliases:
+    - Dow Jones
+    - Dow Jones Industrial
+  - ticker: QQQ
+    name: Invesco Nasdaq 100 ETF
+    aliases:
+    - Nasdaq 100
+    - Nasdaq-100
+  - ticker: SPY
+    name: SPDR S&P 500 ETF
+    aliases:
+    - S&P 500
+    - S&P500
+    - SP 500
+  - ticker: SPX
+    name: Indice S&P 500
+    aliases:
+    - S&P 500 index
+  - ticker: IWM
+    name: iShares Russell 2000 ETF
+    aliases:
+    - Russell 2000
+  - ticker: TNA
+    name: Direxion Small Cap Bull 3X (ETF small caps)
+    aliases:
+    - small caps
+    - small-cap
+  - ticker: URA
+    name: Global X Uranium ETF
+    aliases:
+    - uranium
+    - uranio
+  - ticker: USO
+    name: United States Oil Fund (ETF petroleo)
+    aliases:
+    - crude oil
+    - WTI
+    - oil prices
+  - ticker: SLV
+    name: iShares Silver Trust (ETF plata)
+    aliases:
+    - silver
+    - silver prices
+  - ticker: GLD
+    name: SPDR Gold Shares (ETF oro)
+    aliases:
+    - gold
+    - gold prices
+    - bullion
 schedule:
   report_time: 08:00
   timezone: America/New_York
 telegram:
-  parse_mode: Markdown
+  parse_mode: HTML
 language: es

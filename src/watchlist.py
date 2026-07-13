@@ -286,10 +286,33 @@ def get_watchlist_min_score() -> int:
 #  MATCHING (¿la noticia menciona una empresa de la watchlist?)
 # ============================================================
 
+# Tickers que también son palabras comunes en inglés/español.
+# Para estos NO se busca el ticker "a pelo" (daría falsos positivos como
+# "now", "low", "spy", "coin", "meta"...). Solo se detectan por nombre o alias.
+COMMON_WORD_TICKERS = {
+    "now", "low", "c", "v", "ma", "dia", "spy", "coin", "meta",
+    "uso", "all", "on", "it", "are", "so", "hd", "mu",
+}
+
+# ETFs de materias primas / apalancados con alias genéricos (oil, gold, silver,
+# uranium, semiconductor, small caps). Estos alias generan mucho ruido, así que
+# a las noticias que matchean SOLO por estos se les exige más confianza.
+NOISY_ETF_TICKERS = {"USO", "SLV", "GLD", "URA", "SOXL", "TNA"}
+
+
+def is_noisy_etf(ticker: str) -> bool:
+    """True si el ticker es un ETF de materia prima/apalancado con alias genéricos."""
+    return (ticker or "").upper() in NOISY_ETF_TICKERS
+
+
 def match_company(item) -> Optional[dict]:
     """
     ¿La noticia menciona alguna empresa de la watchlist?
     Busca ticker, nombre y aliases en el título y resumen.
+
+    Para tickers que son palabras comunes (NOW, LOW, C, V, MA, SPY, COIN,
+    META, USO...) NO se busca el ticker suelto, solo el nombre/alias, para
+    evitar falsos positivos.
 
     Devuelve la empresa encontrada (dict) o None.
     """
@@ -311,21 +334,18 @@ def match_company(item) -> Optional[dict]:
         name = (c.get("name") or "").lower()
         aliases = [a.lower() for a in c.get("aliases", [])]
 
-        # Buscar coincidencias exactas de palabra (no subcadenas parciales)
-        # Ej: "AAPL" no debe matchear dentro de "AAPLGOOG"
-        keywords = [ticker, name] + aliases
-        for kw in keywords:
-            if not kw or len(kw) < 2:
-                continue
-            # Para tickers (corta, toda mayúscula), buscar como palabra
-            if kw == ticker:
-                # Buscar ticker con límites de palabra o al inicio/final
-                if _word_match(haystack, ticker):
-                    return c
-            else:
-                # Para nombres/aliases, basta con aparición
-                if kw in haystack:
-                    return c
+        # ¿El ticker es una palabra común? → no buscar el ticker suelto
+        ticker_is_ambiguous = ticker in COMMON_WORD_TICKERS
+
+        # 1. Ticker como palabra completa (solo si no es ambiguo)
+        if not ticker_is_ambiguous and len(ticker) >= 2:
+            if _word_match(haystack, ticker):
+                return c
+
+        # 2. Nombre y aliases (aparición como subcadena)
+        for kw in [name] + aliases:
+            if kw and len(kw) >= 3 and kw in haystack:
+                return c
 
     return None
 

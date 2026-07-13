@@ -162,6 +162,9 @@ def analyze_batch(items: list[NewsItem], reasoning: bool = False) -> list[dict]:
              {"role": "user", "content": PROMPT_ANALYZE_BATCH_STARS.format(news_list=news_list)}],
             reasoning=False,
             max_tokens=2500,
+            # Reparto de carga: el reporte diario (1 vez/día) usa Cerebras/Gemini
+            # y reserva Groq para las alertas frecuentes del Sistema 2.
+            prefer=["Cerebras", "Google Gemini"],
         )
         results = _parse_json(resp)
         if isinstance(results, list):
@@ -169,6 +172,67 @@ def analyze_batch(items: list[NewsItem], reasoning: bool = False) -> list[dict]:
         return []
     except Exception:
         return []
+
+
+PROMPT_ANALYZE_BATCH_BREAKING = (
+    "Analiza CADA noticia de última hora y decide si puede mover el mercado "
+    "americano. Devuelve SOLO un JSON array, UN objeto por noticia, con su idx.\n"
+    "```json\n"
+    "[{{\"idx\": 0, \"puede_mover_mercado\": true, \"razonamiento\": \"...\", "
+    "\"sentimiento\": \"positivo|negativo|neutral|volatil\", \"confianza\": 0-100, "
+    "\"stars\": 1-5, \"contexto\": \"...\", \"analisis_profundo\": \"...\", "
+    "\"puntos_clave\": [\"...\"], \"beneficiados\": [\"...\"], \"perjudicados\": [\"...\"], "
+    "\"razon_activos\": \"...\", \"reaccion_mercado\": \"...\"}}, ...]\n"
+    "```\n\n"
+    "RECUERDA: stars es 1-5 (direccional). Incluye TODAS las noticias por su idx.\n\n"
+    "Noticias:\n{news_list}"
+)
+
+
+def analyze_batch_breaking(items: list[NewsItem], chunk_size: int = 5) -> list[Optional[dict]]:
+    """
+    SISTEMA 2 — Analiza varias noticias en UNA sola llamada al LLM (por lotes),
+    en vez de una llamada por noticia. Ahorra tokens y tiempo.
+
+    Trocea en lotes de `chunk_size` para que el JSON de salida no se corte.
+    Devuelve una lista alineada con `items` (misma longitud); cada posición es
+    el dict de análisis o None si no se pudo analizar esa noticia.
+    """
+    out: list[Optional[dict]] = [None] * len(items)
+    if not items:
+        return out
+
+    for start in range(0, len(items), chunk_size):
+        chunk = items[start:start + chunk_size]
+        news_list = ""
+        for j, it in enumerate(chunk):
+            news_list += (
+                f"\n--- Noticia {j} ---\n"
+                f"Título: {it.title}\n"
+                f"Fuente: {it.source}\n"
+                f"Hora: {it.time or 'N/A'}\n"
+                f"Resumen: {it.summary or 'N/A'}\n"
+            )
+        try:
+            resp = chat(
+                [{"role": "system", "content": SYSTEM_ANALYZER},
+                 {"role": "user", "content": PROMPT_ANALYZE_BATCH_BREAKING.format(news_list=news_list)}],
+                reasoning=False,
+                max_tokens=2800,
+            )
+            results = _parse_json(resp)
+        except Exception:
+            results = None
+
+        if isinstance(results, list):
+            for r in results:
+                if not isinstance(r, dict):
+                    continue
+                idx = r.get("idx")
+                if isinstance(idx, int) and 0 <= idx < len(chunk):
+                    out[start + idx] = r
+
+    return out
 
 
 def filter_high_impact(items: list[NewsItem], analyses: list[dict], min_score: int = 70) -> list:

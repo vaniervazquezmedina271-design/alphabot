@@ -43,7 +43,7 @@ def get_active_provider() -> Optional[LLMProvider]:
     return _build_provider(provider_name, model)
 
 
-def get_failover_chain() -> list[LLMProvider]:
+def get_failover_chain(prefer: "str | list[str] | None" = None) -> list[LLMProvider]:
     """
     Construye la cadena completa de proveedores para failover:
     [activo, failover1, failover2, ...]
@@ -51,37 +51,48 @@ def get_failover_chain() -> list[LLMProvider]:
     Solo incluye proveedores con API key configurada.
     Si el failover está desactivado o no hay proveedores configurados,
     devuelve solo el activo.
+
+    prefer: nombre(s) de proveedor a poner al FRENTE de la cadena (reparto de
+    carga). Ej: prefer="Cerebras" o prefer=["Cerebras", "Google Gemini"].
+    Los proveedores preferidos que existan se colocan primero, en ese orden;
+    el resto conserva su orden original. Si un preferido no tiene API key, se
+    ignora sin romper nada.
     """
     cfg = config.load_config()
     active = cfg.get("active", {})
     active_name = active.get("provider", "OpenRouter")
     active_model = active.get("model", "")
 
-    chain: list[LLMProvider] = []
+    # Lista de (nombre, provider) para poder reordenar por nombre
+    named: list[tuple[str, LLMProvider]] = []
 
-    # Proveedor primario (activo)
     primary = _build_provider(active_name, active_model)
     if primary is not None:
-        chain.append(primary)
+        named.append((active_name, primary))
 
-    # Proveedores de failover
     failover_cfg = cfg.get("failover", {})
-    if not failover_cfg.get("enabled", True):
-        return chain
+    if failover_cfg.get("enabled", True):
+        for entry in failover_cfg.get("providers", []):
+            name = entry.get("provider", "")
+            model = entry.get("model", "")
+            if not name or name.lower() == active_name.lower():
+                continue
+            provider = _build_provider(name, model)
+            if provider is not None:
+                named.append((name, provider))
 
-    for entry in failover_cfg.get("providers", []):
-        name = entry.get("provider", "")
-        model = entry.get("model", "")
-        if not name:
-            continue
-        # No duplicar el primario en la cadena de failover
-        if name.lower() == active_name.lower():
-            continue
-        provider = _build_provider(name, model)
-        if provider is not None:
-            chain.append(provider)
+    # Reordenar poniendo los proveedores preferidos al frente
+    if prefer:
+        prefer_list = [prefer] if isinstance(prefer, str) else list(prefer)
+        pref_lower = [p.lower() for p in prefer_list]
 
-    return chain
+        def _rank(item: tuple[str, LLMProvider]) -> int:
+            n = item[0].lower()
+            return pref_lower.index(n) if n in pref_lower else len(pref_lower) + 1
+
+        named.sort(key=_rank)  # sort estable: mantiene orden relativo del resto
+
+    return [p for _, p in named]
 
 
 def get_active_settings() -> dict:
@@ -96,15 +107,19 @@ def get_active_settings() -> dict:
     }
 
 
-def chat(messages: list, **overrides) -> str:
+def chat(messages: list, prefer: "str | list[str] | None" = None, **overrides) -> str:
     """
     Atajo: usa la cadena de proveedores para chatear.
     Prueba el proveedor activo primero; si falla (429, rate limit, etc.),
     prueba el siguiente proveedor de la cadena de failover.
 
+    prefer: proveedor(es) a usar primero (reparto de carga). Ej: el reporte
+    diario usa prefer=["Cerebras", "Google Gemini"] para no gastar la cuota de
+    Groq, que se reserva para las alertas frecuentes del Sistema 2.
+
     Permite sobreescribir temperatura/max_tokens/reasoning por llamada.
     """
-    chain = get_failover_chain()
+    chain = get_failover_chain(prefer=prefer)
     if not chain:
         raise RuntimeError(
             "No hay proveedor configurado. Abre el dashboard y pega tu API key."
