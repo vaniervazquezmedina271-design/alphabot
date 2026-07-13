@@ -179,3 +179,21 @@ Nueva función: avisa cuando un ticker de la watchlist se mueve fuerte en el dí
 - **Probado:** los 40 tickers con datos frescos; detectó SOXL -14%, USO +8.4%, ORCL -6.5%, INTC -6.1%, URA -5.2%.
 
 Nota: yfinance también habilita a futuro el snapshot de mercado en el reporte diario y la "reacción de precio" para eventos sin dato numérico (discursos Fed).
+
+
+---
+
+## 13 de julio, 2026 — Panorama de mercado en el reporte diario (yfinance)
+
+Nuevo módulo `src/market_snapshot.py` (`format_market_snapshot`): antepone al reporte diario del Sistema 1 un bloque con el estado del mercado (cambio % del día vs cierre anterior), dentro de un `<blockquote expandable>`:
+- Índices: S&P 500, Nasdaq 100, Dow Jones, Russell 2000
+- Volatilidad: VIX (nivel + %)
+- Materias primas: WTI (petróleo), Oro
+- Bono 10Y (rendimiento) y Dólar (DXY)
+- **Sin cripto** (solo bolsa/mercado, por preferencia del usuario)
+
+Detalles:
+- Semáforo 🟢/🔴/⚪ por dirección (en VIX se invierte: subida del VIX = 🔴).
+- Ventana de 5 días en yfinance para que futuros/índices tengan ≥2 cierres válidos (evita "+0.0%" falsos).
+- Integrado en `generate_daily_report` (se antepone a `format_daily_report`), en try/except para no romper el reporte.
+- **Probado:** S&P -0.8%, Nasdaq -1.9%, VIX 17.2 (+14.2%), WTI +11.2%, Oro -2.5%, 10Y 4.61%, DXY +0.3%.

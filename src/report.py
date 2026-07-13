@@ -223,8 +223,15 @@ def generate_daily_report(reasoning: bool = True) -> tuple[str, list[dict]]:
     items = [it for it in calendar_items if it.stars >= min_stars]
     print(f"  ⭐ {len(items)} de {len(calendar_items)} eventos con {min_stars}+ estrellas")
 
+    # Panorama de mercado (snapshot vía yfinance) — se antepone al reporte
+    try:
+        from .market_snapshot import format_market_snapshot
+        snapshot = format_market_snapshot()
+    except Exception:
+        snapshot = ""
+
     if not items:
-        return "📊 No hay eventos macro de alto impacto programados hoy para el mercado americano.", []
+        return snapshot + "📊 No hay eventos macro de alto impacto programados hoy para el mercado americano.", []
 
     # Limitar a 10 para que el LLM devuelva JSON completo
     items = items[:10]
@@ -245,7 +252,7 @@ def generate_daily_report(reasoning: bool = True) -> tuple[str, list[dict]]:
         return "📊 No se pudo analizar los eventos.", []
 
     print(f"📊 {len(entries)} eventos macro de alto impacto")
-    report_text = format_daily_report(entries)
+    report_text = snapshot + format_daily_report(entries)
 
     # Guardar historial + backup automático
     _save_history(report_text, entries)
