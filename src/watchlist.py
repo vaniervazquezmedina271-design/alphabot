@@ -320,13 +320,12 @@ def match_company(item) -> Optional[dict]:
     if not companies:
         return None
 
-    # Texto donde buscar (título + resumen, en minúsculas)
-    haystack = " ".join([
-        getattr(item, "title", "") or "",
-        getattr(item, "summary", "") or "",
-    ]).lower()
-
-    if not haystack.strip():
+    # Buscar SOLO en el TÍTULO (el sujeto real de la noticia).
+    # El resumen suele traer menciones de pasada (ej. "Elon Musk", "Dow Jones
+    # consensus", "Nasdaq-100") que colaban noticias ajenas a la watchlist.
+    # Además se exige coincidencia por PALABRA COMPLETA (no subcadena).
+    title = (getattr(item, "title", "") or "").lower()
+    if not title.strip():
         return None
 
     for c in companies:
@@ -334,17 +333,14 @@ def match_company(item) -> Optional[dict]:
         name = (c.get("name") or "").lower()
         aliases = [a.lower() for a in c.get("aliases", [])]
 
-        # ¿El ticker es una palabra común? → no buscar el ticker suelto
-        ticker_is_ambiguous = ticker in COMMON_WORD_TICKERS
-
-        # 1. Ticker como palabra completa (solo si no es ambiguo)
-        if not ticker_is_ambiguous and len(ticker) >= 2:
-            if _word_match(haystack, ticker):
+        # 1. Ticker como palabra completa (solo si no es palabra común ambigua)
+        if ticker not in COMMON_WORD_TICKERS and len(ticker) >= 2:
+            if _word_match(title, ticker):
                 return c
 
-        # 2. Nombre y aliases (aparición como subcadena)
+        # 2. Nombre y aliases como PALABRA COMPLETA en el título
         for kw in [name] + aliases:
-            if kw and len(kw) >= 3 and kw in haystack:
+            if kw and len(kw) >= 3 and _word_match(title, kw):
                 return c
 
     return None

@@ -82,7 +82,6 @@ watchlist:
   - ticker: TSLA
     name: Tesla
     aliases:
-    - Elon Musk
     - Model 3
     - Model Y
     - Cybertruck

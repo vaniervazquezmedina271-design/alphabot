@@ -117,3 +117,23 @@ No es un cambio de código: si quieres frecuencia alta en la nube sin gastar la 
 - `src/llm.py` — `prefer` en `get_failover_chain()`/`chat()`
 - `src/watchlist.py` — `NOISY_ETF_TICKERS`, `is_noisy_etf()`
 - `config.yaml` — `filter.commodity_min_score: 70`
+
+
+---
+
+## 13 de julio, 2026 — Fix de precisión del watchlist (falsos positivos)
+
+**Problema:** el Sistema 2 enviaba noticias que NO eran de la lista (ej. SpaceX, Paramount, macro de empleo/Fed). Causa: `match_company` buscaba en el **resumen** además del título y por **subcadena**, así que menciones de pasada colaban la noticia:
+- SpaceX entró por su resumen ("Elon Musk's... Nasdaq-100") → matcheaba TSLA (alias "Elon Musk") y QQQ.
+- Macro de empleo entró por "Dow Jones consensus" en el resumen → matcheaba DIA.
+
+**Arreglo (`src/watchlist.py` → `match_company`):**
+- Ahora busca **solo en el TÍTULO** (el sujeto real de la noticia), no en el resumen.
+- Coincidencia por **palabra completa** (`_word_match`), no por subcadena, también para nombres y alias.
+
+**Config:** se quitó el alias **"Elon Musk"** de TSLA (Musk dirige SpaceX/xAI/X, no solo Tesla).
+
+**Verificado:** SpaceX, World Cup jobs, Fed rate hike, Middle East, Paramount → descartadas. Netflix→NFLX, Micron→MU, NVIDIA→NVDA, oil prices→USO, Amazon→AMZN → siguen matcheando.
+
+### Sobre el seguimiento del Sistema 1 (results_tracker)
+Funciona: envía la actualización cuando el evento tiene **valor numérico real** (ej. Monthly Budget Statement con déficit real -120.0B, beat). Los **discursos de la Fed no tienen dato numérico**, por eso no generan actualización (no hay resultado que comparar). Es el comportamiento correcto por diseño.
