@@ -24,6 +24,9 @@ requests>=2.32.0          # Envío simple de mensajes (notifier)
 pyyaml>=6.0.1             # Lectura/escritura de config.yaml
 python-dotenv>=1.0.1      # Carga de variables de entorno (.env)
 
+# --- Datos de mercado (precios, % del día, earnings) ---
+yfinance>=0.2.40          # Precios de Yahoo Finance para alertas de precio (Sistema 2b)
+
 # --- Utilidades ---
 python-dateutil>=2.9.0    # Manejo de zonas horarias (reporte 8am)
 tzdata>=2024.1            # Datos de zonas horarias para Windows (zoneinfo)

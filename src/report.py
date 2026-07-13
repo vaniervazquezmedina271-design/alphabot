@@ -412,6 +412,13 @@ def run_breaking_alerts(reasoning: bool = False, max_news: int = 15) -> int:
 
     only_watchlist = cfg.get("watchlist", {}).get("only", False)
 
+    # Alertas de PRECIO (movimiento del día vía yfinance), independientes de las noticias
+    try:
+        from .price_alerts import run_price_alerts
+        run_price_alerts()
+    except Exception as e:
+        print(f"  ⚠️ Alertas de precio: {e}")
+
     print("🚨 Scrapeando noticias en tiempo real (Sistema 2)...")
     items = fetch_news_sources()
     # Avisar por Telegram si alguna fuente lleva varias ejecuciones sin traer nada

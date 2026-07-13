@@ -160,3 +160,22 @@ Se añadió `src/sources/reuters.py` (`ReutersSource`, nombre `reuters`), que tr
 - Probado: 30 titulares frescos (Fed Waller, Wall Street, chips, petróleo, TSMC earnings).
 
 **Fuentes actuales del Sistema 2:** Reuters/AP, CNBC/MarketWatch (investing), Yahoo Finance, Finviz, Bloomberg.
+
+
+---
+
+## 13 de julio, 2026 — Alertas de PRECIO (yfinance) — Sistema 2b
+
+Nueva función: avisa cuando un ticker de la watchlist se mueve fuerte en el día (% vs cierre anterior), aunque no haya salido una noticia. Complementa las alertas de noticias.
+
+- Nuevo módulo `src/price_alerts.py` (`run_price_alerts`), usa **yfinance** (gratis, sin API key).
+- Umbral configurable: `filter.price_move_pct` (default **5%**).
+- Envía **un solo mensaje consolidado** con todos los que superan el umbral (no spam), ordenados por magnitud.
+- **Dedup por día y dirección**: no repite el mismo ticker+dirección el mismo día (`data/cache/sent_price_DATE.json`).
+- Solo alerta con **datos frescos de hoy** (evita movimientos viejos de fin de semana/feriado).
+- Símbolos de índice mapeados a Yahoo (`SPX` → `^GSPC`).
+- Se ejecuta dentro de `run_breaking_alerts` (local cada 5 min y en la nube), en try/except para no afectar las alertas de noticias.
+- `yfinance>=0.2.40` añadido a `requirements.txt`.
+- **Probado:** los 40 tickers con datos frescos; detectó SOXL -14%, USO +8.4%, ORCL -6.5%, INTC -6.1%, URA -5.2%.
+
+Nota: yfinance también habilita a futuro el snapshot de mercado en el reporte diario y la "reacción de precio" para eventos sin dato numérico (discursos Fed).

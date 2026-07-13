@@ -27,6 +27,7 @@ filter:
   min_stars: 2
   breaking_min_score: 70
   commodity_min_score: 70   # umbral estricto para ETFs de materias primas (USO, SLV, GLD, URA, SOXL, TNA)
+  price_move_pct: 5         # alerta de precio si un ticker se mueve >= 5% en el dia
 failover:
   enabled: true
   providers:
