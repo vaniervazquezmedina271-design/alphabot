@@ -146,3 +146,17 @@ Funciona: envía la actualización cuando el evento tiene **valor numérico real
 **Problema:** llegaban 2 alertas del mismo activo (ej. USO) porque eran titulares distintos de webs distintas sobre el mismo tema (petróleo), redactados diferente, y el dedup por similitud no los juntaba.
 
 **Arreglo (`src/report.py` → `run_breaking_alerts`, PASO 3):** ahora, entre las noticias que pasan el umbral, se envía como **máximo 1 alerta por ticker** en cada ejecución, quedándose con la de **mayor confianza**. Las demás del mismo ticker se omiten (no se marcan como enviadas, así que si en la siguiente ejecución siguen siendo relevantes, pueden salir). Elimina los duplicados de tema aunque los titulares sean distintos.
+
+
+---
+
+## 13 de julio, 2026 — Fuente Reuters + AP (agencias de cable)
+
+Se añadió `src/sources/reuters.py` (`ReutersSource`, nombre `reuters`), que trae titulares de **Reuters** y **Associated Press** vía **Google News RSS** filtrado por dominio (`site:reuters.com` / `site:apnews.com`) y últimas 24h (`when:1d`). Se hace así porque los RSS oficiales de Reuters/AP ya no están disponibles.
+
+- Registrada en `report.py` (`NEWS_SOURCES`, primera de la lista) y en `config.yaml` (`sources.reuters.enabled: true`).
+- Prioridad de dedup **máxima**: `reuters`=5, `associated press`=5 (por encima de Bloomberg=4). Si la misma noticia sale en Reuters/AP y en otra web, se conserva la de la agencia.
+- Los títulos de Google News (" - Reuters") se limpian automáticamente.
+- Probado: 30 titulares frescos (Fed Waller, Wall Street, chips, petróleo, TSMC earnings).
+
+**Fuentes actuales del Sistema 2:** Reuters/AP, CNBC/MarketWatch (investing), Yahoo Finance, Finviz, Bloomberg.

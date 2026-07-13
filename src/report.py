@@ -29,6 +29,7 @@ from .sources.yahoo_calendar import YahooCalendarSource
 from .sources.finviz import FinvizSource
 from .sources.finviz_calendar import FinvizCalendarSource
 from .sources.bloomberg_rss import BloombergRSSSource
+from .sources.reuters import ReutersSource
 from .analyzer import analyze_batch, analyze_single, analyze_batch_breaking
 from .formatter import format_daily_report, format_breaking_alert
 from .notifier import send_to_telegram
@@ -50,6 +51,7 @@ CALENDAR_SOURCES = {
 
 # SISTEMA 2 — Noticias en tiempo real (van saliendo)
 NEWS_SOURCES = {
+    "reuters": ReutersSource,
     "investing": InvestingSource,
     "yahoo_finance": YahooFinanceSource,
     "finviz": FinvizSource,
@@ -563,6 +565,8 @@ _STOPWORDS = {
 # Prioridad de fuente: si la misma noticia aparece en varias webs, se conserva
 # la de mayor prioridad (Bloomberg > Investing/CNBC > Yahoo > Finviz).
 _SOURCE_PRIORITY = {
+    "reuters": 5,             # agencia de cable: máxima prioridad
+    "associated press": 5,
     "bloomberg": 4,
     "investing": 3,
     "cnbc": 3,

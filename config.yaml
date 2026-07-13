@@ -13,6 +13,8 @@ sources:
   finviz_calendar:
     enabled: true
   # --- SISTEMA 2 (noticias en tiempo real) ---
+  reuters:
+    enabled: true
   investing:
     enabled: true
   yahoo_finance:
