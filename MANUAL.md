@@ -20,6 +20,7 @@
 11. [Seguimiento de resultados](#11-seguimiento-de-resultados)
 12. [Backup automático](#12-backup-automático)
 13. [Ejecutar en la nube (GitHub Actions)](#13-ejecutar-en-la-nube-github-actions)
+13.5. [Bot local en tiempo real (publicar al instante)](#135-bot-local-en-tiempo-real-publicar-al-instante)
 14. [Cómo hacer cambios en el futuro](#14-cómo-hacer-cambios-en-el-futuro)
 15. [Comandos útiles](#15-comandos-útiles)
 16. [Estructura de config.yaml](#16-estructura-de-configyaml)
@@ -44,6 +45,7 @@ AlphaBot es un **agente de noticias financieras** especializado en el mercado de
 - 📂 **Noticias colapsables** en Telegram (`<blockquote expandable>`)
 - 💾 **Backup automático** de todo lo que genera
 - ☁️ **Funciona en local (tu PC) y en la nube (GitHub Actions gratis)**
+- ⚡ **Bot local en tiempo real**: publica en el canal al instante cuando le mandas algo (no espera a la próxima hora)
 
 ---
 
@@ -80,6 +82,7 @@ C:\VANIER\AGENTE DE BUSQUEDA\
 ├── MANUAL.md              ← Este archivo
 ├── app.py                 ← Dashboard (Streamlit)
 ├── run_report.py          ← Ejecuta los reportes (entrada principal)
+├── bot_local.py           ← Bot local en tiempo real (publica al instante)
 ├── config.yaml            ← Configuración del agente
 ├── .env                   ← Tus API keys (crear en paso 4)
 ├── requirements.txt       ← Dependencias de Python
@@ -492,6 +495,74 @@ Ve la ejecución en tiempo real. Si termina en verde ✅, el agente está funcio
 
 ---
 
+## 13.5 Bot local en tiempo real (publicar al instante)
+
+### El problema de la nube
+GitHub Actions despierta el bot cada hora en el minuto 0. Si le mandas un mensaje a las 8:05 AM, el bot no lo procesa hasta las 9:00 AM (+ 2-3 min de setup). **Puede tardar hasta 1 hora.**
+
+### La solución: bot local
+`bot_local.py` corre en tu PC y revisa Telegram cada **30 segundos**. Cuando le mandas algo, lo procesa y publica en el canal **al instante** (menos de 30 segundos de espera).
+
+### Cómo usarlo
+
+```bash
+cd "C:\VANIER\AGENTE DE BUSQUEDA"
+source venv/Scripts/activate
+python bot_local.py
+```
+
+El bot empieza a correr y muestra:
+```
+=======================================================
+🤖 AlphaBot — Bot Local (tiempo real)
+=======================================================
+   Revisando Telegram cada 30 segundos
+   Publica al instante cuando le mandas algo
+   Detén con Ctrl+C
+=======================================================
+```
+
+- **Mándale un mensaje al bot** por Telegram (texto, audio, foto, documento)
+- El bot lo procesa en **menos de 30 segundos**
+- Para detenerlo: **Ctrl+C** en la consola
+
+### Qué hace el bot local
+| Recibe | Acción | ¿Usa LLM? |
+|--------|--------|-----------|
+| `publica: hola` | Publica "hola" en el canal | No (instantáneo) |
+| Audio: "publica, hola" | Transcribe + publica | Sí (Whisper) |
+| Foto/documento/video | Reenvía al canal | No |
+| `/add AAPL` | Añade a watchlist | No |
+| `/list` | Muestra watchlist | No |
+| Lenguaje natural | Interpreta con LLM | Sí |
+
+### Importante: convivencia nube + local
+- El **offset de Telegram** se comparte (`data/cache/telegram_offset.txt`)
+- Si la nube procesó un mensaje → el bot local **no lo repite**
+- Si el bot local procesó un mensaje → la nube **no lo repite**
+- **Cuando tu PC está apagada**, la nube sigue funcionando cada hora
+- **Cuando tu PC está encendida**, el bot local responde al instante
+
+### Dejar el bot corriendo en segundo plano
+Si quieres que el bot corra siempre que la PC esté encendida (sin tener una consola abierta):
+
+**Opción A — Ventana minimizada:**
+Crea un archivo `iniciar_bot.bat` en el Escritorio:
+```bat
+@echo off
+cd /d "C:\VANIER\AGENTE DE BUSQUEDA"
+call venv\Scripts\activate.bat
+python bot_local.py
+```
+Doble click para iniciar. Minimiza la ventana.
+
+**Opción B — Inicio automático con Windows:**
+1. Presiona `Win+R`, escribe `shell:startup`
+2. Crea ahí un acceso directo a `iniciar_bot.bat`
+3. El bot arrancará automáticamente al encender la PC
+
+---
+
 ## 14. Cómo hacer cambios en el futuro
 
 Esta sección explica exactamente qué hacer si quieres modificar algo del agente.
@@ -536,6 +607,7 @@ git push
 | Los horarios de la nube | `.github/workflows/*.yml` |
 | El backup automático | `src/backup.py` |
 | El dashboard web | `app.py` + `ui/` |
+| El bot local en tiempo real | `bot_local.py` |
 
 ### 14.3 Si solo quieres cambiar la watchlist
 
@@ -610,6 +682,9 @@ python run_report.py --all --no-reasoning
 
 # Dashboard
 streamlit run app.py
+
+# Bot local en tiempo real (publica al instante)
+python bot_local.py
 ```
 
 ### Mantenimiento
