@@ -72,6 +72,38 @@ def send_to_telegram(text: str, chat_id: str = None, token: str = None,
     return all_ok
 
 
+def send_photo_to_telegram(image_path: str, caption: str = "",
+                           chat_id: str = None, token: str = None,
+                           parse_mode: str = "HTML") -> bool:
+    """
+    Envía una imagen (foto) a Telegram con un caption opcional (máx 1024 chars).
+    Devuelve True si se envió. Si falla con parse_mode, reintenta sin él.
+    """
+    token = token or get_env("TELEGRAM_BOT_TOKEN")
+    chat_id = chat_id or get_env("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        print("❌ Falta TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID en .env")
+        return False
+
+    url = f"https://api.telegram.org/bot{token}/sendPhoto"
+    cap = (caption or "")[:1024]
+    try:
+        with open(image_path, "rb") as img:
+            files = {"photo": img}
+            data = {"chat_id": chat_id, "caption": cap, "parse_mode": parse_mode}
+            resp = requests.post(url, data=data, files=files, timeout=30)
+        if resp.status_code != 200:
+            # Reintento sin parse_mode (omitir la clave, no pasar None)
+            with open(image_path, "rb") as img:
+                files = {"photo": img}
+                data = {"chat_id": chat_id, "caption": cap}
+                resp = requests.post(url, data=data, files=files, timeout=30)
+        return resp.status_code == 200
+    except Exception as e:
+        print(f"❌ Error enviando foto a Telegram: {e}")
+        return False
+
+
 def test_telegram_connection(token: str = None, chat_id: str = None) -> tuple[bool, str]:
     """Envía un mensaje de prueba y devuelve (éxito, mensaje)."""
     ok = send_to_telegram(

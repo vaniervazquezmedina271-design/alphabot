@@ -209,3 +209,17 @@ Detalles:
 - S&P 500 (índice 500 grandes empresas EE.UU.), Nasdaq 100 (índice tecnológicas), Dow Jones (índice 30 industriales), Russell 2000 (índice small caps), VIX (índice del miedo / volatilidad), Petróleo WTI (crudo), Oro (onza), Bono del Tesoro EE.UU. 10 años (rendimiento), Índice del dólar (DXY).
 
 **Resumen mejoras estilo market-intel-bot:** (1) alertas de precio ✅, (2) panorama de mercado en reporte diario ✅, (3) calendario de earnings ✅.
+
+
+---
+
+## 13 de julio, 2026 — Alertas de precio como IMAGEN profesional (matplotlib)
+
+Las alertas de precio (Sistema 2b) ahora se envían como una **imagen** en vez de solo texto:
+- Nuevo módulo `src/price_chart.py` (`render_price_movers_image`): gráfico de barras horizontal, tema oscuro tipo terminal financiera, verde/rojo, con %, precio y marca AlphaBot. Ordenado por mayor movimiento arriba. Etiquetas limpias sin solapamiento.
+- Nueva función `notifier.send_photo_to_telegram()` (usa `sendPhoto` de Telegram, caption con nombres).
+- `run_price_alerts` genera la imagen y la envía como foto con caption; si la imagen falla, cae a texto (robusto).
+- `matplotlib>=3.8.0` añadido a `requirements.txt`.
+- **Probado en vivo:** imagen generada e inspeccionada (SOXL -14%, USO +8.4%, ORCL, INTC, URA), enviada a Telegram (SENT_MOVERS=5).
+
+Nota sobre imágenes/animaciones: se descartó Midjourney/IA generativa porque inventa/deforma los números (no sirve para datos exactos) y no tiene API práctica. matplotlib da una imagen profesional, fiable y ligera que funciona igual en local y en la nube. Opción futura de mayor "diseño": tarjeta HTML/CSS renderizada con navegador headless (más pesada).

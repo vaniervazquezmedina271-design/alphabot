@@ -174,6 +174,14 @@ def run_price_alerts() -> int:
         nombre = name_by_ticker.get(ticker, ticker)
         lineas.append(f"{emoji} <b>{ticker}</b> {nombre} · {signo}{pct:.1f}% · ${price:,.2f}")
 
+    # Caption (texto con nombres, va junto a la imagen). Sin blockquote (caption).
+    caption = (
+        f"📊 <b>MOVIMIENTOS FUERTES</b> · watchlist\n"
+        f"{dia} {fecha} · {hora} ET · umbral ±{threshold:.0f}%\n\n"
+        + "\n".join(lineas)
+        + f"\n\n🤖 AlphaBot · {_saludo()}"
+    )
+    # Mensaje de respaldo (texto puro con separadores) si la imagen falla
     mensaje = (
         f"📊 <b>MOVIMIENTOS FUERTES</b> (watchlist)\n"
         f"{dia} {fecha} · {hora} ET · umbral ±{threshold:.0f}%\n"
@@ -183,7 +191,23 @@ def run_price_alerts() -> int:
     )
 
     print(f"  💹 {len(movers)} movimiento(s) de precio ≥ {threshold}% → enviando a Telegram")
-    ok = send_to_telegram(mensaje, parse_mode="HTML")
+
+    # Intentar imagen profesional; si falla, enviar texto
+    ok = False
+    try:
+        from .price_chart import render_price_movers_image
+        from .notifier import send_photo_to_telegram
+        img = render_price_movers_image(
+            [(t, p, pr) for (t, p, pr, _k) in movers], threshold, name_by_ticker
+        )
+        if img:
+            ok = send_photo_to_telegram(img, caption=caption, parse_mode="HTML")
+    except Exception as e:
+        print(f"  ⚠️ Imagen de precios falló, uso texto: {e}")
+
+    if not ok:
+        ok = send_to_telegram(mensaje, parse_mode="HTML")
+
     if ok:
         for _t, _p, _pr, key in movers:
             sent.add(key)

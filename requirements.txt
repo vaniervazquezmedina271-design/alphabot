@@ -26,6 +26,7 @@ python-dotenv>=1.0.1      # Carga de variables de entorno (.env)
 
 # --- Datos de mercado (precios, % del día, earnings) ---
 yfinance>=0.2.40          # Precios de Yahoo Finance para alertas de precio (Sistema 2b)
+matplotlib>=3.8.0         # Imagen profesional de las alertas de precio (gráfico)
 
 # --- Utilidades ---
 python-dateutil>=2.9.0    # Manejo de zonas horarias (reporte 8am)
