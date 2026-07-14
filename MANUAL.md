@@ -836,3 +836,47 @@ git push -u origin main
 ```
 
 ¡Listo! AlphaBot está funcionando. 🎉
+
+
+---
+
+## 19. Novedades (13 julio 2026)
+
+### 19.1 Fuentes del Sistema 2
+- Se añadió **Reuters + Associated Press** (`src/sources/reuters.py`) vía Google News RSS. Máxima prioridad en el dedup (Reuters/AP > Investing/CNBC/MarketWatch > Yahoo > Finviz > Bloomberg).
+
+### 19.2 Sin repeticiones (fix definitivo — estado compartido)
+- Antes la nube repetía noticias porque olvidaba su memoria en cada ejecución (la cache no se sube a GitHub).
+- Ahora hay **una sola fuente de verdad**: `data/state/sent_alerts.json` (rastreado por git, ventana 48h). El bot local y la nube lo comparten (`git pull` al inicio, `commit + push` al final). Ninguno repite, corran juntos o por separado.
+- Extras anti-repetición: dedup entre fuentes por similitud de tokens, **máximo 1 alerta por ticker por ejecución** (la de mayor confianza), y matching **solo por título** con palabra completa (evita falsos positivos tipo SpaceX/Paramount).
+
+### 19.3 Alertas de PRECIO (nuevo, Sistema 2b)
+- Avisa cuando un ticker de la watchlist se mueve **≥ `filter.price_move_pct`** (5%) en el día, aunque no haya noticia. Vía **yfinance**.
+- Se envía como **IMAGEN profesional** (gráfico de barras tema oscuro, `src/price_chart.py` con matplotlib) mediante `notifier.send_photo_to_telegram`; si falla, cae a texto.
+- Un solo mensaje consolidado, dedup por día y dirección, solo con datos frescos del día.
+
+### 19.4 Reporte diario enriquecido (Sistema 1)
+- **Panorama de mercado** al inicio (`src/market_snapshot.py`): S&P 500, Nasdaq 100, Dow, Russell 2000, VIX, Petróleo WTI, Oro, Bono 10Y, Dólar DXY (sin cripto), con etiquetas descriptivas.
+- **Earnings próximos** (`src/earnings_calendar.py`): empresas de la watchlist que reportan en 7 días (marca 🔔 HOY). ETFs omitidos.
+
+### 19.5 Eficiencia
+- Cache de análisis/enviadas de **48h**.
+- **Análisis por lotes** en el Sistema 2 (1 llamada LLM por cada ~5 noticias nuevas).
+- **Reparto de carga LLM**: el reporte diario usa Cerebras/Gemini y reserva Groq para las alertas.
+- **Anti-ruido** para ETFs de materias primas (USO, SLV, GLD, URA, SOXL, TNA): umbral `commodity_min_score` (70).
+- **Health-check** de fuentes: avisa por Telegram si una fuente deja de traer noticias.
+
+### 19.6 Dependencias nuevas
+- `yfinance>=0.2.40` (precios, panorama, earnings) y `matplotlib>=3.8.0` (imagen de precios).
+
+### 19.7 Config nuevo (`config.yaml`)
+```yaml
+filter:
+  price_move_pct: 5         # alerta de precio si el ticker se mueve >= 5% en el día
+  commodity_min_score: 70   # umbral estricto para ETFs de materias primas
+watchlist:
+  only: true                # Sistema 2 solo envía noticias de la lista
+```
+
+### 19.8 Pendiente
+- Imagen de alertas de precio con **Gemini Nano Banana** (opción A híbrida o B tarjeta full-IA) — sin decidir.
