@@ -5,6 +5,15 @@
 
 ---
 
+## 14 de julio, 2026 — Fix Cerebras: `reasoning` solo a proveedores que lo soportan
+
+- **Bug:** con `active.reasoning: true`, Cerebras (`gpt-oss-120b`) devolvía error 400 `"reasoning: property 'reasoning' is unsupported"` y el failover saltaba a Gemini, desperdiciando un proveedor de respaldo. Groq tampoco soporta ese parámetro.
+- **Fix (quirúrgico):** en `src/providers/openai_compat.py` se añadió `_supports_reasoning()`, que detecta el proveedor por su `base_url`. Solo OpenRouter y OpenAI nativo reciben `extra_body={"reasoning": {"effort": "high"}}`; para Cerebras/Groq (y proveedores desconocidos) el parámetro se **omite**, de modo que responden normal aunque `reasoning=True`.
+- **Sin cambios** en temperatura, max_tokens, mensajes, failover ni transcripción Whisper. Con `reasoning=False` el comportamiento es idéntico al anterior.
+- **Verificado:** Cerebras `gpt-oss-120b` con `reasoning=True` responde texto ("Paris") sin error 400; Groq sigue respondiendo con `reasoning=True` sin 400.
+
+---
+
 ## 14 de julio, 2026 (noche) — Sistema 1: panorama aparte, todos los eventos 2+★ y desplegables
 
 Rediseño de la presentación del reporte diario (Sistema 1) según pedido del usuario:

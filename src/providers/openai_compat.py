@@ -19,6 +19,25 @@ class OpenAICompatProvider(LLMProvider):
         from openai import OpenAI
         return OpenAI(api_key=self.api_key or "no-key", base_url=self.base_url or None)
 
+    def _supports_reasoning(self) -> bool:
+        """
+        Solo algunos proveedores OpenAI-compatibles aceptan la propiedad
+        `reasoning` en el cuerpo de la petición. Cerebras y Groq devuelven
+        error 400 ("property 'reasoning' is unsupported") si se les envía.
+        Detectamos por base_url: OpenRouter y OpenAI nativo la soportan;
+        Cerebras/Groq (y demás) NO, así que ahí se omite el parámetro.
+        """
+        url = (self.base_url or "").lower()
+        # Proveedores que NO soportan reasoning -> omitir el parámetro.
+        if "cerebras" in url or "groq" in url:
+            return False
+        # Proveedores que SÍ lo soportan.
+        if "openrouter" in url or "api.openai.com" in url:
+            return True
+        # Por defecto, ser conservador y no enviarlo (evita 400 en proveedores
+        # desconocidos que tampoco lo soporten).
+        return False
+
     def chat(self, messages: list, temperature: float = 0.3, max_tokens: int = 1500,
              reasoning: bool = False) -> str:
         client = self._client()
@@ -28,8 +47,9 @@ class OpenAICompatProvider(LLMProvider):
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        # OpenRouter soporta "reasoning" en extra_body para activar <think>
-        if reasoning:
+        # OpenRouter soporta "reasoning" en extra_body para activar <think>.
+        # Cerebras/Groq no lo soportan (error 400), así que se omite ahí.
+        if reasoning and self._supports_reasoning():
             kwargs["extra_body"] = {"reasoning": {"effort": "high"}}
 
         resp = client.chat.completions.create(**kwargs)
