@@ -14,6 +14,7 @@ DOS SISTEMAS SEPARADOS:
 from __future__ import annotations
 
 import json
+import os
 import re
 import hashlib
 from datetime import datetime
@@ -270,8 +271,30 @@ def generate_daily_report(reasoning: bool = True) -> tuple[str, list[dict]]:
     return report_text, entries
 
 
-def run_and_send(reasoning: bool = True) -> bool:
-    """SISTEMA 1 — Genera el reporte diario y lo envía a Telegram."""
+def run_and_send(reasoning: bool = True, force: bool = False) -> bool:
+    """
+    SISTEMA 1 — Genera el reporte diario y lo envía a Telegram.
+
+    GUARD anti-duplicado: el cron del Sistema 1 dispara varias veces dentro de
+    la ventana 7-8 AM NY (minutos desfasados) porque GitHub Actions retrasa o
+    salta las ejecuciones "a la hora en punto". Para que el reporte salga UNA
+    sola vez al día, se consulta el estado compartido (data/state/daily_report.json):
+    si ya se envió hoy (hora NY), se omite. Tras enviarlo con éxito se marca.
+
+    force=True omite el guard (acción explícita del usuario por /report).
+    """
+    # Traer el guard más reciente (en local hace git pull; en la nube el
+    # checkout ya trae lo último) y comprobar si ya salió hoy.
+    if not force:
+        try:
+            from .sent_state import pull as _pull_state, daily_report_sent_today
+            _pull_state()
+            if daily_report_sent_today():
+                print("⏭️ Reporte diario ya enviado hoy (guard). Omitido para no duplicar.")
+                return False
+        except Exception as e:
+            print(f"  ⚠️ Guard reporte diario: {e}")
+
     report_text, entries = generate_daily_report(reasoning)
     print(f"\n📊 Reporte generado ({len(report_text)} chars, {len(entries)} eventos)")
 
@@ -281,6 +304,12 @@ def run_and_send(reasoning: bool = True) -> bool:
     ok = send_to_telegram(report_text)
     if ok:
         print("✅ Reporte enviado a Telegram.")
+        # Marcar el guard compartido para que el cron no lo repita hoy.
+        try:
+            from .sent_state import mark_daily_report_sent
+            mark_daily_report_sent()
+        except Exception as e:
+            print(f"  ⚠️ No se pudo marcar el guard del reporte diario: {e}")
     else:
         print("❌ Error al enviar a Telegram.")
     return ok
@@ -421,6 +450,11 @@ def run_breaking_alerts(reasoning: bool = False, max_news: int = 15) -> int:
     wl_min_score = get_watchlist_min_score()
 
     only_watchlist = cfg.get("watchlist", {}).get("only", False)
+
+    # MODO CLOUD-ONLY: la nube es el único emisor de alertas. Ya no hay
+    # coordinación por "heartbeat" entre PC y nube (se eliminó): al haber un
+    # solo emisor no hay choques de estado ni alertas duplicadas. El estado
+    # compartido (data/state) sigue evitando repeticiones entre ejecuciones.
 
     # Alertas de PRECIO (movimiento del día vía yfinance), independientes de las noticias
     try:
@@ -673,7 +707,15 @@ def deduplicate(items: list[NewsItem]) -> list[NewsItem]:
     noticia aparezca UNA SOLA VEZ. Cuando hay duplicado, se conserva la
     fuente de mayor prioridad (Bloomberg > Investing/CNBC > Yahoo > Finviz).
     """
-    kept: list[dict] = []  # {"tokens": set, "item": NewsItem}
+    def _add_source(names: list[str], src: str) -> None:
+        """Añade una fuente a la lista sin duplicar (case-insensitive)."""
+        s = (src or "").strip()
+        if not s:
+            return
+        if s.lower() not in {n.lower() for n in names}:
+            names.append(s)
+
+    kept: list[dict] = []  # {"tokens": set, "item": NewsItem, "sources": list[str]}
     for it in items:
         toks = _title_tokens(it.title)
         dup_idx = None
@@ -682,11 +724,28 @@ def deduplicate(items: list[NewsItem]) -> list[NewsItem]:
                 dup_idx = i
                 break
         if dup_idx is None:
-            kept.append({"tokens": toks, "item": it})
-        elif _source_rank(it.source) > _source_rank(kept[dup_idx]["item"].source):
-            # Duplicado, pero esta fuente tiene mayor prioridad → reemplazar
-            kept[dup_idx] = {"tokens": toks, "item": it}
-    return [k["item"] for k in kept]
+            names: list[str] = []
+            _add_source(names, it.source)
+            kept.append({"tokens": toks, "item": it, "sources": names})
+        else:
+            # Duplicado: acumular la fuente de ESTA noticia en el grupo.
+            k = kept[dup_idx]
+            _add_source(k["sources"], it.source)
+            if _source_rank(it.source) > _source_rank(k["item"].source):
+                # Esta fuente tiene mayor prioridad → conservar su NewsItem,
+                # pero mantener la lista acumulada de fuentes del grupo.
+                k["tokens"] = toks
+                k["item"] = it
+
+    result: list[NewsItem] = []
+    for k in kept:
+        item = k["item"]
+        names = list(k["sources"])
+        # Asegurar que la propia fuente del item conservado esté incluida.
+        _add_source(names, item.source)
+        item.sources = names
+        result.append(item)
+    return result
 
 
 def _save_history(report_text: str, entries: list[dict]) -> None:

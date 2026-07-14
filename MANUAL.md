@@ -1,9 +1,26 @@
 # 📖 Manual de Instrucciones — AlphaBot (Agente de Búsqueda Financiera)
 
-> **Última actualización:** 13 de julio, 2026
+> **Última actualización:** 14 de julio, 2026
 > **Ubicación del proyecto:** `C:\VANIER\AGENTE DE BUSQUEDA`
 
-> **📌 Cambios recientes (13 jul 2026):**
+> **📌 Novedades (14 jul 2026) — MODO CLOUD-ONLY:**
+> - **La NUBE es el único emisor de alertas.** El bot local (`bot_local.py`) ya
+>   NO envía alertas automáticas: solo atiende comandos y publicaciones de
+>   Telegram. Así se eliminan de raíz las repeticiones (antes emitían PC + nube).
+> - **Flag `LOCAL_SEND_ALERTS`** (env) o `coordination.local_send_alerts` (config),
+>   **default `false`**. Ponlo en `true` si quieres que el local vuelva a emitir.
+> - **Bajo demanda:** `/report` y `/breaking` por Telegram siguen funcionando en
+>   local (es acción explícita tuya).
+> - **Agrupación de fuentes:** si una noticia sale en varias webs, la alerta
+>   muestra "📰 N fuentes: A, B, C".
+> - **Finviz fuera del Sistema 2** (noticias); el Sistema 1 sigue con Finviz
+>   Calendar.
+> - **Fix Sistema 1:** el reporte diario vuelve a salir completo (análisis por
+>   lotes) y **una sola vez al día** aunque el cron dispare varias veces (guard en
+>   `data/state/daily_report.json`). El cron ahora usa minutos desfasados
+>   (15/35/55) para que GitHub no lo salte.
+>
+> **📌 Cambios anteriores (13 jul 2026):**
 > - **Sistema 1** ahora usa **SOLO el calendario de Finviz** (se quitó el filtro de "relevancia USA" que borraba eventos válidos; todos los eventos de Finviz ya son de EE.UU.).
 > - **Sistema 2** trabaja en modo **solo watchlist**: envía únicamente noticias de tu lista de empresas (flag `watchlist.only`).
 > - **Deduplicación mejorada**: si la misma noticia sale en varias webs, se publica una sola vez (la fuente de mayor prioridad).

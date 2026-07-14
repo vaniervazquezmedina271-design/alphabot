@@ -138,40 +138,63 @@ def analyze_single(item: NewsItem, reasoning: bool = False) -> Optional[dict]:
         return {"error": str(e), "puede_mover_mercado": False}
 
 
-def analyze_batch(items: list[NewsItem], reasoning: bool = False) -> list[dict]:
+def analyze_batch(items: list[NewsItem], reasoning: bool = False,
+                  chunk_size: int = 4) -> list[Optional[dict]]:
     """
-    Analiza un lote de noticias (reporte diario).
-    reasoning=False por defecto para evitar problemas de parsing.
-    Devuelve una lista de análisis, uno por noticia.
-    """
-    news_list = ""
-    for i, it in enumerate(items):
-        news_list += (
-            f"\n--- Noticia {i} ---\n"
-            f"Título: {it.title}\n"
-            f"Fuente: {it.source}\n"
-            f"Hora: {it.time or 'N/A'}\n"
-            f"Estrellas (de la fuente): {it.stars}\n"
-            f"Forecast: {it.forecast or 'N/A'} | Previo: {it.previous or 'N/A'} | "
-            f"Actual: {it.actual or 'N/A'}\n"
-        )
+    Analiza un lote de noticias (reporte diario, Sistema 1).
 
-    try:
-        resp = chat(
-            [{"role": "system", "content": SYSTEM_ANALYZER},
-             {"role": "user", "content": PROMPT_ANALYZE_BATCH_STARS.format(news_list=news_list)}],
-            reasoning=False,
-            max_tokens=2500,
-            # Reparto de carga: el reporte diario (1 vez/día) usa Cerebras/Gemini
-            # y reserva Groq para las alertas frecuentes del Sistema 2.
-            prefer=["Cerebras", "Google Gemini"],
-        )
-        results = _parse_json(resp)
+    Trocea en lotes pequeños (chunk_size=4) — una llamada LLM por lote — para
+    que el JSON de respuesta NO se trunque por el límite de tokens (con ~10
+    eventos en una sola llamada el JSON se cortaba y _parse_json devolvía None,
+    provocando reportes vacíos "No se pudo analizar los eventos").
+
+    Devuelve una lista ALINEADA con `items` (misma longitud); cada posición es
+    el dict de análisis o None si no se pudo analizar ese evento. Se alinea por
+    el `idx` que devuelve el LLM DENTRO de cada lote.
+
+    reasoning=False por defecto para evitar problemas de parsing.
+    """
+    out: list[Optional[dict]] = [None] * len(items)
+    if not items:
+        return out
+
+    for start in range(0, len(items), chunk_size):
+        chunk = items[start:start + chunk_size]
+        news_list = ""
+        for j, it in enumerate(chunk):
+            news_list += (
+                f"\n--- Noticia {j} ---\n"
+                f"Título: {it.title}\n"
+                f"Fuente: {it.source}\n"
+                f"Hora: {it.time or 'N/A'}\n"
+                f"Estrellas (de la fuente): {it.stars}\n"
+                f"Forecast: {it.forecast or 'N/A'} | Previo: {it.previous or 'N/A'} | "
+                f"Actual: {it.actual or 'N/A'}\n"
+            )
+
+        try:
+            resp = chat(
+                [{"role": "system", "content": SYSTEM_ANALYZER},
+                 {"role": "user", "content": PROMPT_ANALYZE_BATCH_STARS.format(news_list=news_list)}],
+                reasoning=False,
+                max_tokens=3500,
+                # Reparto de carga: el reporte diario (1 vez/día) usa Cerebras/Gemini
+                # y reserva Groq para las alertas frecuentes del Sistema 2.
+                prefer=["Cerebras", "Google Gemini"],
+            )
+            results = _parse_json(resp)
+        except Exception:
+            results = None
+
         if isinstance(results, list):
-            return results
-        return []
-    except Exception:
-        return []
+            for r in results:
+                if not isinstance(r, dict):
+                    continue
+                idx = r.get("idx")
+                if isinstance(idx, int) and 0 <= idx < len(chunk):
+                    out[start + idx] = r
+
+    return out
 
 
 PROMPT_ANALYZE_BATCH_BREAKING = (
@@ -278,4 +301,14 @@ def _parse_json(text: str) -> Optional[dict | list]:
                 return json.loads(m.group())
             except Exception:
                 pass
+        # Recuperación de JSON truncado (array cortado por max_tokens):
+        # conservar los objetos COMPLETOS hasta el último '}' y cerrar el array.
+        if "[" in cleaned:
+            frag = cleaned[cleaned.index("["):]
+            last = frag.rfind("}")
+            if last != -1:
+                try:
+                    return json.loads(frag[:last + 1] + "]")
+                except Exception:
+                    pass
         return None

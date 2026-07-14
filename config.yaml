@@ -20,7 +20,7 @@ sources:
   yahoo_finance:
     enabled: true
   finviz:
-    enabled: true
+    enabled: false   # Sistema 2: Finviz noticias DESACTIVADO (ruido/duplicados). NO afecta a finviz_calendar (Sistema 1).
   bloomberg_rss:
     enabled: true
 filter:
@@ -28,6 +28,14 @@ filter:
   breaking_min_score: 70
   commodity_min_score: 70   # umbral estricto para ETFs de materias primas (USO, SLV, GLD, URA, SOXL, TNA)
   price_move_pct: 5         # alerta de precio si un ticker se mueve >= 5% en el dia
+coordination:
+  # MODO CLOUD-ONLY: la NUBE (GitHub Actions) es el ÚNICO emisor de alertas.
+  # El bot local (PC) solo atiende comandos/publicaciones de Telegram y las
+  # acciones bajo demanda (/report, /breaking). Así se eliminan de raíz las
+  # repeticiones (antes emitían PC + nube sin memoria común).
+  # Pon local_send_alerts: true (o env LOCAL_SEND_ALERTS=true) para que el bot
+  # local vuelva a emitir alertas automáticamente (modo antiguo PC-emisora).
+  local_send_alerts: false
 failover:
   enabled: true
   providers:

@@ -2,18 +2,23 @@ name: Sistema 1 — Reporte diario
 
 # ============================================================
 #  Reporte diario de calendario macro.
-#  Solo corre entre 7-8 AM hora de Nueva York (guard en Python).
+#  Solo corre entre 7-8 AM hora de Nueva York (guard de ventana en Python).
 #  GitHub Actions cron va en UTC:
 #    - 11 UTC = 7 AM EDT (horario de verano)
 #    - 12 UTC = 7 AM EST (horario de invierno)
-#  Ejecutamos ambos crons; el guard en run_report.py deja pasar
-#  solo si NY está entre 7:00 y 8:59 AM.
+#
+#  FIABILIDAD: GitHub retrasa o SALTA los crons "a la hora en punto" (minuto 0),
+#  sobre todo en horas de mucha carga. Para no perder el reporte, disparamos a
+#  MINUTOS DESFASADOS y VARIAS VECES dentro de la ventana (minutos 15, 35 y 55
+#  de las horas 11 y 12 UTC). El guard "reporte diario ya enviado hoy" del
+#  estado compartido (data/state/daily_report.json) garantiza que, aunque
+#  dispare varias veces, el reporte salga UNA sola vez al día.
 # ============================================================
 
 on:
   schedule:
-    - cron: '0 11 * * *'   # 7 AM EDT (verano)
-    - cron: '0 12 * * *'   # 7 AM EST (invierno)
+    - cron: '15,35,55 11 * * *'   # 7 AM EDT (verano), 3 intentos desfasados
+    - cron: '15,35,55 12 * * *'   # 7 AM EST (invierno), 3 intentos desfasados
   workflow_dispatch:
 
 jobs:

@@ -60,6 +60,9 @@ def main():
     dry_run = "--no-send" in sys.argv
     do_breaking = "--breaking" in sys.argv or "--all" in sys.argv
     do_daily = "--daily" in sys.argv or "--all" in sys.argv or not do_breaking
+    # ¿El reporte diario se pidió explícitamente por Telegram (/report)? En ese
+    # caso se omite el guard anti-duplicado (acción explícita del usuario).
+    daily_forced = False
 
     print("=" * 55)
     print("📊 AGENTE DE BÚSQUEDA FINANCIERA")
@@ -84,6 +87,7 @@ def main():
             trigger = pop_trigger()
             if trigger == "report":
                 do_daily = True
+                daily_forced = True
                 print("  📅 Telegram solicitó reporte diario → ejecutando")
             elif trigger == "breaking":
                 do_breaking = True
@@ -135,7 +139,7 @@ def main():
             print("=" * 55)
             print(report_text)
         else:
-            run_and_send(reasoning=reasoning)
+            run_and_send(reasoning=reasoning, force=daily_forced)
 
     # ============================================================
     #  SISTEMA 2 — Alertas en tiempo real (noticias del momento)

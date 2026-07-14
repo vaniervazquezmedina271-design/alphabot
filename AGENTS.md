@@ -424,11 +424,41 @@ Si eres un sub-agente trabajando en este proyecto:
 
 ---
 
-## 12. ESTADO ACTUAL (actualizado 13 julio 2026) — LEER OBLIGATORIO
+## 12. ESTADO ACTUAL (actualizado 14 julio 2026) — LEER OBLIGATORIO
 
-> Esta sección refleja cómo quedó el proyecto tras la sesión del 13/07/2026.
+> Esta sección refleja cómo quedó el proyecto tras la sesión del 14/07/2026.
 > Ante conflicto con secciones anteriores, MANDA esta. Detalle en `CAMBIOS.md`
-> y respaldo en `data/backup/ESTADO_ACTUAL_2026-07-13.md`.
+> y respaldo en `data/backup/`.
+
+### MODO CLOUD-ONLY (14 jul 2026) — la nube es el único emisor
+- **Solo la NUBE (GitHub Actions) emite alertas.** El bot local (`bot_local.py`)
+  ya NO ejecuta automáticamente Sistema 2, Sistema 1 ni seguimiento; solo atiende
+  **comandos/publicaciones** de Telegram y las acciones bajo demanda (`/report`,
+  `/breaking`). Esto elimina de raíz las repeticiones (antes emitían PC + nube sin
+  memoria común).
+- **Flag:** `LOCAL_SEND_ALERTS` (env, prioridad) o `coordination.local_send_alerts`
+  en `config.yaml`, **default `false`**. En `true` reactiva la emisión local.
+- **Heartbeat ELIMINADO:** con un solo emisor no hace falta coordinación PC↔nube.
+  Se quitaron `write_heartbeat`, `_read_heartbeat`, `local_is_alive`,
+  `HEARTBEAT_FILE` de `sent_state.py` y el bloque de cesión en `run_breaking_alerts`.
+- **Memoria anti-repetición:** `data/state/sent_alerts.json` (rastreado por git,
+  48h). En la nube `pull()` es no-op y `record_and_sync()` commitea/pushea tras
+  enviar. Las firmas ya enviadas se descartan **antes del LLM**.
+- **Fix Sistema 1:** cron desfasado en `system1-daily.yml`
+  (`15,35,55 11 * * *` y `15,35,55 12 * * *`) + **guard de una-vez-al-día**
+  (`data/state/daily_report.json`, `daily_report_sent_today()` /
+  `mark_daily_report_sent()` en `sent_state.py`, consultado por `run_and_send`;
+  `/report` manual usa `force=True`). El reporte diario sale completo gracias al
+  troceo de `analyze_batch` (chunk_size=4, max_tokens 3500) + recuperación de JSON
+  truncado en `_parse_json`.
+- **Agrupación de fuentes:** `NewsItem.sources: list[str]`; `deduplicate()` acumula
+  todas las fuentes y conserva la de mayor prioridad; `format_breaking_alert`
+  muestra "📰 N fuentes: ..." si hay >1.
+- **Finviz fuera del Sistema 2** (`sources.finviz.enabled: false`); el Sistema 1
+  sigue con `finviz_calendar`.
+- Spec del cambio en `.kiro/specs/sistema2-cloud-only/`.
+
+### Estado previo (13 jul 2026)
 
 ### Repositorio
 - `github.com/vaniervazquezmedina271-design/alphabot`, rama `main`. Todo pusheado.

@@ -247,3 +247,79 @@ compartían estado.
 - Los workflows ya tienen `permissions: contents: write` para poder pushear.
 
 Con esto, corran juntos o por separado (PC encendida o apagada), no se repiten noticias.
+
+
+---
+
+## 14 de julio, 2026 — CLOUD-ONLY: la nube es el único emisor de alertas
+
+Decisión del usuario: para eliminar de raíz las repeticiones (antes emitían PC +
+nube sin memoria común), **solo la nube (GitHub Actions) emite alertas**. El bot
+local pasa a ser un cliente de comandos/publicaciones.
+
+### 1. Bot local ya no emite alertas automáticas
+
+- `bot_local.py`: nuevo flag `_local_send_alerts()` que lee el env
+  `LOCAL_SEND_ALERTS` (prioridad) o `coordination.local_send_alerts` en
+  `config.yaml`. **Default `false`** (cloud-only).
+- Con el default, el bucle NO ejecuta el Sistema 2 (`run_breaking_alerts`), el
+  Sistema 1 (`run_and_send`) ni el seguimiento de resultados. Solo atiende
+  **comandos/publicaciones** de Telegram cada 30s.
+- **Excepción bajo demanda:** si el usuario manda `/report` o `/breaking` por
+  Telegram, se ejecuta igual (acción explícita). `/report` usa `force=True` para
+  saltarse el guard diario.
+- Poniendo el flag en `true` se recupera el modo antiguo (PC emisora).
+
+### 2. Memoria persistente + eliminación del heartbeat
+
+- Se mantiene `data/state/sent_alerts.json` (rastreado por git, 48h). En la nube
+  `pull()` es no-op y `record_and_sync()` hace commit/push tras enviar.
+- Las noticias con firma ya presente se descartan **antes del análisis LLM**
+  (ahorro de tokens) — confirmado en `run_breaking_alerts` (PASO 1).
+- **Eliminada toda la lógica de heartbeat/coordinación** PC↔nube (ya no aplica
+  con un solo emisor): se quitaron `write_heartbeat`, `_read_heartbeat`,
+  `local_is_alive` y `HEARTBEAT_FILE` de `sent_state.py`, y el bloque de cesión
+  en `report.run_breaking_alerts`.
+
+### 3. Fix Sistema 1: cron fiable + guard de una-vez-al-día
+
+- `.github/workflows/system1-daily.yml`: el cron pasó de `0 11`/`0 12` (que
+  GitHub retrasa/salta) a **`15,35,55 11 * * *`** y **`15,35,55 12 * * *`**
+  (3 intentos desfasados por hora, dentro de la ventana 7-8 AM NY).
+- Nuevo **GUARD** en el estado compartido `data/state/daily_report.json`
+  ({ "date": "YYYY-MM-DD" } hora NY). `run_and_send` consulta
+  `daily_report_sent_today()` antes de generar y llama a
+  `mark_daily_report_sent()` tras enviar. Aunque el cron dispare varias veces,
+  el reporte sale **UNA sola vez al día**.
+- Ambos workflows conservan `permissions: contents: write` y el checkout deja el
+  token con push.
+
+### 4. Agrupación de fuentes, Finviz fuera del S2, batch (ya vigentes)
+
+- `NewsItem.sources: list[str]` + `deduplicate()` acumula todas las fuentes y
+  conserva la de mayor prioridad; `format_breaking_alert` muestra
+  "📰 N fuentes: A, B, C" si hay más de una. Verificado en pruebas aisladas.
+- `config.yaml`: `sources.finviz.enabled: false` (Sistema 2). El Sistema 1 sigue
+  con `finviz_calendar`. `coordination.local_send_alerts: false`.
+- `analyze_batch` troceado (chunk_size=4, max_tokens 3500) + `_parse_json`
+  recupera JSON truncado → el reporte diario sale completo (verificado en
+  dry-run con Core Inflation, Inflation YoY, testimonio Fed, ADP).
+
+### Pruebas (sin enviar a Telegram)
+
+- `_verify_plan.py` (temporal, eliminado tras probar): dedup 3 fuentes → 1 item
+  con `sources` de 3 y conserva Reuters; "3 fuentes" en el formato; 1 fuente sin
+  línea extra; noticia repetida descartada antes del LLM; guard presente y
+  heartbeat eliminado; flag `LOCAL_SEND_ALERTS` controla la emisión. **Todo OK.**
+- `run_report.py --daily --no-send --no-reasoning`: reporte completo. ✅
+- Imports OK: `src.report, src.sent_state, src.analyzer, src.formatter, bot_local`.
+
+### Archivos tocados
+
+- `bot_local.py` — flag cloud-only, bucle condicionado, `/report` force
+- `src/report.py` — quitado heartbeat, guard diario en `run_and_send`
+- `src/sent_state.py` — eliminado heartbeat, añadido guard `daily_report.json`
+- `run_report.py` — `daily_forced` para `/report` manual
+- `config.yaml` — `coordination.local_send_alerts: false`
+- `.github/workflows/system1-daily.yml` — cron desfasado (15,35,55)
+- `.kiro/specs/sistema2-cloud-only/` — requirements, design, tasks

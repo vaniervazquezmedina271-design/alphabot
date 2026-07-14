@@ -39,6 +39,7 @@ class NewsItem:
     previous: str = ""                # valor anterior
     actual: str = ""                  # valor real (si ya salió)
     summary: str = ""                 # resumen breve del contenido si está disponible
+    sources: list = field(default_factory=list)  # fuentes que traían esta misma noticia (agrupación)
     raw: dict = field(default_factory=dict)  # datos extra originales por si acaso
 
     def to_dict(self) -> dict:

@@ -177,6 +177,12 @@ def format_breaking_alert(entry: dict, alert_time: str = None) -> str:
     pais = _esc(item.country or "🇺🇸")
     lines.append(f"📰 {fuente} · 🕐 {hora_item} ET · {pais} · {sent_label} · {conf}%")
 
+    # Agrupación de fuentes: si la misma noticia la traían varias webs, listarlas.
+    fuentes = [s for s in (getattr(item, "sources", None) or []) if s]
+    if len(fuentes) > 1:
+        fuentes_str = ", ".join(_esc(s) for s in fuentes)
+        lines.append(f"📰 {len(fuentes)} fuentes: {fuentes_str}")
+
     # --- DETALLE PLEGABLE (blockquote expandable) ---
     detail_parts = []
 
