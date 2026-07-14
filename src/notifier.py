@@ -135,7 +135,35 @@ def _split_message(text: str, max_len: int) -> list[str]:
         text = text[cut:]
     if text.strip():
         chunks.append(text)
-    return chunks
+    return _balance_blockquotes(chunks)
+
+
+def _balance_blockquotes(chunks: list[str]) -> list[str]:
+    """
+    Asegura que cada fragmento tenga las etiquetas <blockquote> balanceadas.
+
+    Al partir un mensaje largo (ej. el reporte diario con muchos eventos, cada
+    uno en su <blockquote expandable>), el corte puede caer DENTRO de un
+    blockquote. Sin balancear, Telegram fallaría el parseo HTML de ese
+    fragmento. Aquí: si un fragmento deja un blockquote abierto, se cierra al
+    final; y el siguiente se reabre al principio.
+    """
+    open_tag = "<blockquote expandable>"
+    close_tag = "</blockquote>"
+    fixed: list[str] = []
+    carry_open = False
+    for chunk in chunks:
+        if carry_open:
+            chunk = open_tag + chunk
+        opens = chunk.count("<blockquote")
+        closes = chunk.count(close_tag)
+        if opens > closes:
+            chunk = chunk + close_tag
+            carry_open = True
+        else:
+            carry_open = False
+        fixed.append(chunk)
+    return fixed
 
 
 def _sanitize_html(text: str) -> str:

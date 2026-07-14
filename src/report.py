@@ -200,48 +200,88 @@ def _is_us_relevant(item: NewsItem) -> bool:
     return False
 
 
+def dedup_calendar(items: list[NewsItem]) -> list[NewsItem]:
+    """
+    Deduplicación específica del CALENDARIO económico (Sistema 1).
+
+    A diferencia de `deduplicate()` (que fusiona noticias parecidas por
+    similitud de tokens), aquí NO se fusionan eventos macro con títulos
+    distintos: cada evento del calendario es único aunque comparta palabras
+    (ej. "Fed Chair Powell Speech" vs "Fed Interest Rate Decision"). Solo se
+    descartan duplicados EXACTOS (mismo título + misma hora), que aparecen si
+    varias fuentes de calendario traen el mismo evento.
+    """
+    seen: set[tuple[str, str]] = set()
+    result: list[NewsItem] = []
+    for it in items:
+        key = ((it.title or "").strip().lower(), (it.time or "").strip())
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(it)
+    return result
+
+
+def build_market_snapshot_message() -> str:
+    """Mensaje APARTE con el panorama de mercado simplificado (o "")."""
+    try:
+        from .market_snapshot import format_market_snapshot
+        return format_market_snapshot()
+    except Exception:
+        return ""
+
+
+def build_earnings_message() -> str:
+    """Mensaje APARTE con el calendario de earnings próximos (o "")."""
+    try:
+        from .earnings_calendar import format_earnings_calendar
+        return format_earnings_calendar(days_ahead=7)
+    except Exception:
+        return ""
+
+
 def generate_daily_report(reasoning: bool = True) -> tuple[str, list[dict]]:
     """
     SISTEMA 1 — Reporte diario de eventos macro programados.
     Usa SOLO el calendario económico de Finviz.
     Scrapea el calendario → filtra por estrellas → analiza → formatea.
 
+    IMPORTANTE: el texto devuelto contiene SOLO los eventos económicos
+    programados. El panorama de mercado y el calendario de earnings se envían
+    como MENSAJES APARTE (ver `build_market_snapshot_message` /
+    `build_earnings_message`, usados por `run_and_send`).
+
+    Publica TODOS los eventos del calendario con `min_stars`+ estrellas (2 y 3):
+    ya NO se limita a 10 para no descartar eventos válidos de 2+ estrellas.
+
     NOTA: el calendario de Finviz ya trae solo eventos de EE.UU., por lo que
     NO se filtra por país aquí. La relevancia para EE.UU. es una peculiaridad
     del Sistema 2 (noticias en tiempo real), NO del Sistema 1.
 
-    Devuelve (texto_formateado, lista_de_entradas).
+    Devuelve (texto_formateado_de_eventos, lista_de_entradas).
     """
     cfg = load_config()
     min_stars = cfg.get("filter", {}).get("min_stars", 2)
 
     print("📅 Scrapeando calendario macro de Finviz (Sistema 1)...")
     calendar_items = fetch_calendar_sources()
-    calendar_items = deduplicate(calendar_items)
+    # Dedup específico del calendario: NO fusiona eventos macro distintos,
+    # solo quita duplicados exactos (mismo título + hora).
+    calendar_items = dedup_calendar(calendar_items)
 
     # ÚNICO FILTRO: impacto por estrellas (2+). Todos los eventos del calendario
     # de Finviz son de EE.UU., así que no se descarta nada por país.
     items = [it for it in calendar_items if it.stars >= min_stars]
     print(f"  ⭐ {len(items)} de {len(calendar_items)} eventos con {min_stars}+ estrellas")
 
-    # Encabezado del reporte: panorama de mercado + earnings próximos (vía yfinance)
-    try:
-        from .market_snapshot import format_market_snapshot
-        snapshot = format_market_snapshot()
-    except Exception:
-        snapshot = ""
-    try:
-        from .earnings_calendar import format_earnings_calendar
-        earnings = format_earnings_calendar(days_ahead=7)
-    except Exception:
-        earnings = ""
-    header = snapshot + earnings
-
     if not items:
-        return header + "📊 No hay eventos macro de alto impacto programados hoy para el mercado americano.", []
+        return "📊 No hay eventos macro de alto impacto programados hoy para el mercado americano.", []
 
-    # Limitar a 10 para que el LLM devuelva JSON completo
-    items = items[:10]
+    # Publicar TODOS los eventos de 2+ estrellas. Se conserva un tope de
+    # seguridad ALTO (40) solo para no desbordar en un día atípico; el análisis
+    # por lotes (analyze_batch, chunk_size=4) soporta muchos eventos.
+    if len(items) > 40:
+        items = items[:40]
 
     print(f"🧠 Analizando {len(items)} eventos macro con LLM...")
     analyses = analyze_batch(items, reasoning=reasoning)
@@ -259,7 +299,7 @@ def generate_daily_report(reasoning: bool = True) -> tuple[str, list[dict]]:
         return "📊 No se pudo analizar los eventos.", []
 
     print(f"📊 {len(entries)} eventos macro de alto impacto")
-    report_text = header + format_daily_report(entries)
+    report_text = format_daily_report(entries)
 
     # Guardar historial + backup automático
     _save_history(report_text, entries)
@@ -295,11 +335,21 @@ def run_and_send(reasoning: bool = True, force: bool = False) -> bool:
         except Exception as e:
             print(f"  ⚠️ Guard reporte diario: {e}")
 
-    report_text, entries = generate_daily_report(reasoning)
+    # Generar los tres bloques como MENSAJES SEPARADOS.
+    snapshot = build_market_snapshot_message()   # (a) panorama de mercado
+    earnings = build_earnings_message()           # (b) earnings próximos
+    report_text, entries = generate_daily_report(reasoning)  # (c) eventos
     print(f"\n📊 Reporte generado ({len(report_text)} chars, {len(entries)} eventos)")
 
     # Avisar si alguna fuente de calendario lleva varias ejecuciones sin datos
     notify_unhealthy_sources()
+
+    # Enviar en orden: (a) panorama, (b) earnings, (c) reporte de eventos.
+    # Cada uno es un mensaje independiente de Telegram.
+    if snapshot:
+        send_to_telegram(snapshot)
+    if earnings:
+        send_to_telegram(earnings)
 
     ok = send_to_telegram(report_text)
     if ok:

@@ -126,13 +126,11 @@ def format_daily_report(entries: list[dict], report_time: str = None) -> str:
     lines.append(f"{high} de alto impacto · {total} eventos")
     lines.append(_footer())
 
-    text = "\n".join(lines)
-
-    # Telegram tiene límite de 4096 chars
-    if len(text) > 4000:
-        text = text[:3950] + "\n... (truncado)"
-
-    return text
+    # NO truncar: deben salir TODOS los eventos de 2+ estrellas. Si el mensaje
+    # excede 4096, el notifier lo parte en varios (preferiblemente entre eventos,
+    # ya que cada bloque va precedido de línea en blanco). El footer va una sola
+    # vez al final.
+    return "\n".join(lines)
 
 
 def format_breaking_alert(entry: dict, alert_time: str = None) -> str:

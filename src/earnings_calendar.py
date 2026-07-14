@@ -91,12 +91,14 @@ def format_earnings_calendar(days_ahead: int = 7) -> str:
             marca = " 🔔 <b>HOY</b>" if fecha == hoy else ""
             lineas.append(f"📌 <b>{ticker}</b> {nombre} — {etiqueta}{marca}")
 
-        from .formatter import SEPARATOR
         cuerpo = "\n".join(lineas)
+        # Mensaje APARTE (separado del reporte de eventos). Si hay muchas
+        # empresas, se pliega en <blockquote expandable> para no ocupar tanto.
+        if len(proximos) > 6:
+            cuerpo = f"<blockquote expandable>{cuerpo}</blockquote>"
         return (
-            f"📅 <b>EARNINGS PRÓXIMOS</b> (tu watchlist · {days_ahead} días)\n"
-            f"<blockquote expandable>{cuerpo}</blockquote>\n"
-            f"{SEPARATOR}\n\n"
+            f"📅 <b>EARNINGS PRÓXIMOS</b> (tu watchlist · {days_ahead} días)\n\n"
+            f"{cuerpo}"
         )
     except Exception:
         return ""

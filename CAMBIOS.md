@@ -5,6 +5,39 @@
 
 ---
 
+## 14 de julio, 2026 (noche) — Sistema 1: panorama aparte, todos los eventos 2+★ y desplegables
+
+Rediseño de la presentación del reporte diario (Sistema 1) según pedido del usuario:
+
+### 1. Panorama y earnings como MENSAJES APARTE
+- Antes `generate_daily_report` anteponía el panorama de mercado (`market_snapshot`) y los earnings DENTRO del mismo mensaje del reporte de eventos (variable `header`).
+- Ahora `generate_daily_report` devuelve SOLO el texto de los eventos económicos. El panorama y los earnings se generan por separado con dos funciones nuevas en `src/report.py`: `build_market_snapshot_message()` y `build_earnings_message()`.
+- `run_and_send` envía **tres mensajes independientes** en orden: (a) panorama, (b) earnings, (c) reporte de eventos. El guard anti-duplicado (`daily_report_sent_today` / `mark_daily_report_sent`) se mantiene; `force=True` lo salta (uso manual).
+- El dry-run (`run_report.py --daily --no-send`) muestra los tres mensajes por separado.
+
+### 2. Panorama simplificado (estilo limpio tipo Sistema 2)
+- En `src/market_snapshot.py` se **eliminó el Bono del Tesoro 10 años (`^TNX`) y el índice del dólar DXY (`DX-Y.NYB`)** (el usuario no los quiere).
+- Quedan solo: S&P 500, Nasdaq, Dow Jones, Russell 2000, VIX (miedo), Petróleo (WTI) y Oro.
+- Nombres cortos + emojis (🟢/🔴/⚪ por dirección; 😨 VIX; 🛢️ Petróleo; 🥇 Oro). Encabezado "🌎 CÓMO ESTÁ EL MERCADO HOY". Sin `<blockquote>` (es corto y claro).
+
+### 3. TODOS los eventos de 2+ estrellas
+- En `generate_daily_report` se **quitó el límite `items = items[:10]`** que descartaba eventos válidos. Ahora salen TODOS los de 2+ estrellas (tope de seguridad alto en 40). El análisis por lotes (`analyze_batch`, chunk_size=4) los procesa todos.
+- Se reemplazó `deduplicate()` (fusiona por similitud de tokens) por **`dedup_calendar()`**, específico del calendario: NO fusiona eventos macro con títulos distintos, solo quita duplicados exactos (mismo título + hora). Así "Fed Chair Warsh Testimony" y "Fed Barr Speech" ya no se fusionan.
+- **Verificado hoy:** el scraper de Finviz trajo 19 eventos, **14 con 2+ estrellas** (5 de 3★ + 9 de 2★). El reporte incluyó los 14. Coinciden.
+
+### 4. Flechita desplegable por evento
+- `format_daily_report` ya envolvía cada evento en `<blockquote expandable>` (titular visible + detalle plegable). Se confirma el comportamiento y se mantiene el footer AlphaBot una sola vez al final.
+- Se **quitó la truncación interna a 4000 chars** de `format_daily_report` (antes cortaba eventos con "... (truncado)"). Ahora el mensaje completo se parte en el notifier.
+- `src/notifier.py`: nueva función `_balance_blockquotes()` en `_split_message()` que **equilibra las etiquetas `<blockquote>`** al partir mensajes largos, para que cada fragmento sea HTML válido (cierra el blockquote abierto y lo reabre en el siguiente). Verificado: reporte de 15k chars → 4 fragmentos, todos con opens==closes.
+
+### 5. Nada de bonos del Tesoro en el análisis
+- En `src/system_prompt.md` se añadió una sección de preferencias: NO centrar beneficiados/perjudicados en bonos del Tesoro / Treasuries salvo que sea imprescindible; priorizar acciones, sectores e índices bursátiles.
+
+### 6. Envío real
+- Se envió UNA vez el reporte con la nueva presentación (`run_and_send(reasoning=False, force=True)`): panorama simplificado (aparte), earnings (aparte) y reporte con los **14 eventos de 2+ estrellas**, cada uno con su desplegable. Reporte de 15.483 chars.
+
+---
+
 ## 14 de julio, 2026 (tarde)
 
 ### Seguimiento de resultados (Sistema 1) — CONSOLIDADO en un solo mensaje

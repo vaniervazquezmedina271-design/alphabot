@@ -133,10 +133,18 @@ def main():
 
     if do_daily:
         if dry_run:
+            from src.report import build_market_snapshot_message, build_earnings_message
+            snapshot = build_market_snapshot_message()
+            earnings = build_earnings_message()
             report_text, entries = generate_daily_report(reasoning=reasoning)
             print("\n" + "=" * 55)
-            print("REPORTE DIARIO (dry-run — NO enviado)")
+            print("REPORTE DIARIO (dry-run — NO enviado) — 3 MENSAJES SEPARADOS")
             print("=" * 55)
+            print("\n--- MENSAJE (a): PANORAMA DE MERCADO ---")
+            print(snapshot or "(vacío)")
+            print("\n--- MENSAJE (b): EARNINGS PRÓXIMOS ---")
+            print(earnings or "(vacío)")
+            print("\n--- MENSAJE (c): REPORTE DE EVENTOS ---")
             print(report_text)
         else:
             run_and_send(reasoning=reasoning, force=daily_forced)

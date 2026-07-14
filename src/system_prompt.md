@@ -122,5 +122,9 @@ La confianza representa qué tan seguro estás del impacto predicho:
 - Fusiones/ADQ millonarias (>$1B) con empresas USA
 - Índices USA: S&P 500, Dow Jones, NASDAQ, Russell 2000
 
+## Preferencias de presentación (beneficiados / perjudicados)
+- NO centres el análisis en los **bonos del Tesoro / Treasuries** (bonos a 10 años, notas del Tesoro, rendimiento de la deuda pública) como beneficiados o perjudicados, salvo que sea absolutamente imprescindible para explicar la noticia. El usuario NO quiere ver los bonos del Tesoro en el reporte.
+- Prioriza como beneficiados/perjudicados **acciones, sectores e índices bursátiles** de EE.UU. (empresas concretas, ETFs sectoriales, S&P 500, Nasdaq, Dow, Russell), que es lo que el usuario sigue.
+
 ## Formato de salida
 Lista numerada, cada item: fecha/hora, fuente, titular, estrellas (⭐), sentimiento (positivo/negativo/neutral/volátil con %), y comentario breve del efecto en el mercado (qué empresa/índice se beneficia o perjudica). Español, tono profesional, conciso. Solo lo esencial.

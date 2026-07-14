@@ -3,6 +3,19 @@
 > **Última actualización:** 14 de julio, 2026
 > **Ubicación del proyecto:** `C:\VANIER\AGENTE DE BUSQUEDA`
 
+> **📌 Novedades (14 jul 2026, noche) — Sistema 1 rediseñado:**
+> - El reporte diario ahora llega en **3 mensajes separados**: (a) **panorama de
+>   mercado** simplificado, (b) **earnings próximos**, y (c) el **reporte de
+>   eventos económicos**. Antes venía todo pegado en un solo mensaje.
+> - **Panorama más limpio** (estilo Sistema 2): solo S&P 500, Nasdaq, Dow Jones,
+>   Russell 2000, VIX (miedo), Petróleo y Oro, con nombres cortos y emojis.
+>   Se **quitaron el Bono del Tesoro 10 años y el índice del dólar (DXY)**.
+> - El reporte incluye **TODOS los eventos de 2+ estrellas** del calendario de
+>   Finviz (ya no se limita a 10), **cada uno con su flechita desplegable**
+>   (`<blockquote expandable>`) y el footer AlphaBot una sola vez al final.
+> - El análisis ya **no se centra en los bonos del Tesoro** como
+>   beneficiados/perjudicados (se priorizan acciones, sectores e índices).
+>
 > **📌 Novedades (14 jul 2026, tarde) — Seguimiento de resultados consolidado:**
 > - Cuando en una misma corrida hay **2 o más** eventos del Sistema 1 con
 >   resultados reales listos, el seguimiento llega en **UN solo mensaje**: un
