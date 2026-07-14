@@ -355,6 +355,135 @@ def format_results_followup(entry: dict, results: dict) -> str:
     return text
 
 
+def _result_event_block(entry: dict, results: dict) -> str:
+    """
+    Construye el bloque desplegable (<blockquote expandable>) de UN seguimiento
+    de resultados, SIN encabezado ni footer. Se reutiliza para agrupar varios
+    eventos en un solo mensaje consolidado.
+
+    Dentro del desplegable va TODO el detalle del evento:
+      - Título + fuente + hora
+      - Datos: Forecast / Anterior / Actual
+      - ✅ BEAT / ❌ MISS / ➡️ EN LÍNEA
+      - Análisis con datos reales + beneficiados/perjudicados + reacción + enlace
+
+    entry:   {"item": NewsItem, "analysis": dict}   (análisis original)
+    results: {"actual": str, "analisis_real": dict} (resultado real + nuevo análisis)
+    """
+    item: NewsItem = entry["item"]
+    a_original = entry.get("analysis", {}) or {}
+    a_real = results.get("analisis_real", {}) or {}
+
+    stars_real = a_real.get("stars", a_original.get("stars", 3))
+    star_str = _stars_str(stars_real)
+
+    parts = []
+
+    # Cabecera del evento (dentro del desplegable, primera línea siempre visible)
+    parts.append(f"{star_str} <b>{_esc(item.title)}</b>")
+    parts.append(f"📰 {_esc(item.source)} · 🕐 {_esc(item.time or 'N/A')} ET")
+    parts.append("")
+
+    # Datos esperados vs reales
+    forecast = item.forecast or a_original.get("forecast", "N/A")
+    previous = item.previous or a_original.get("previous", "N/A")
+    actual = results.get("actual") or item.actual or a_real.get("actual", "N/A")
+
+    parts.append("📋 <b>Datos:</b>")
+    parts.append(f"   Forecast: {_esc(forecast)}")
+    parts.append(f"   Anterior: {_esc(previous)}")
+    parts.append(f"   <b>Actual: {_esc(actual)}</b>")
+
+    # Sorpresa (beat/miss/in-line)
+    sorpresa = a_real.get("sorpresa") or _determine_surprise(forecast, actual)
+    if sorpresa == "beat":
+        parts.append("✅ <b>SUPERÓ expectativas (BEAT)</b>")
+    elif sorpresa == "miss":
+        parts.append("❌ <b>FALLO expectativas (MISS)</b>")
+    else:
+        parts.append("➡️ <b>EN LÍNEA con expectativas</b>")
+    parts.append("")
+
+    # Análisis con datos reales
+    analisis_real = a_real.get("analisis_profundo") or a_real.get("analisis") or ""
+    if not analisis_real:
+        pts = a_real.get("puntos_clave") or a_real.get("puntos", [])
+        razon = a_real.get("razon_activos") or a_real.get("razon", "")
+        partes = []
+        if pts:
+            partes.append(" ".join(str(p) for p in pts[:3]))
+        if razon:
+            partes.append(razon)
+        analisis_real = " ".join(partes)
+
+    if analisis_real:
+        parts.append("📈 <b>Análisis con resultados reales:</b>")
+        parts.append(_esc(analisis_real))
+        parts.append("")
+
+    # Beneficiados / Perjudicados
+    ben = a_real.get("beneficiados") or []
+    per = a_real.get("perjudicados") or []
+    if ben or per:
+        ben_str = ", ".join(_esc(b) for b in ben[:8]) if ben else "—"
+        per_str = ", ".join(_esc(p) for p in per[:8]) if per else "—"
+        parts.append(f"🟢 <b>Beneficiados:</b> {ben_str}")
+        parts.append(f"🔴 <b>Perjudicados:</b> {per_str}")
+        parts.append("")
+
+    # Reacción esperada del mercado
+    reaccion = a_real.get("reaccion_mercado") or ""
+    if reaccion:
+        parts.append(f"📊 <b>Reacción esperada:</b> {_esc(reaccion)}")
+        parts.append("")
+
+    # Enlace de la fuente
+    if item.url:
+        parts.append(f'🔗 <a href="{_esc(item.url)}">Ver fuente</a>')
+        parts.append(f'📱 Publicado por: {_esc(item.source or "—")}')
+
+    detail_html = "\n".join(parts).rstrip()
+    return f"<blockquote expandable>{detail_html}</blockquote>"
+
+
+def format_results_followup_group(items: list[dict]) -> str:
+    """
+    SECCIÓN 1 — Seguimiento de resultados CONSOLIDADO.
+
+    Agrupa VARIOS seguimientos de resultados en UN SOLO mensaje HTML: un
+    encabezado común (día/fecha/hora), cada evento en su propio
+    <blockquote expandable> (deslizamiento), y el footer AlphaBot UNA sola vez.
+
+    items: lista de dicts, cada uno con:
+        {"entry": {"item": NewsItem, "analysis": dict},
+         "results": {"actual": str, "analisis_real": dict}}
+
+    El notifier parte a 4096 chars si el mensaje es muy largo.
+    """
+    if not items:
+        return ""
+
+    ny = _ny_now()
+    dia = DIAS[ny.weekday()]
+    fecha = ny.strftime("%d/%m/%Y")
+    hora = ny.strftime("%H:%M")
+
+    lines = [
+        "📊 <b>SEGUIMIENTO DE RESULTADOS</b>",
+        f"{dia} {fecha} · {hora}",
+        f"🔄 {len(items)} evento(s) con resultados reales",
+        SEPARATOR,
+    ]
+
+    for it in items:
+        lines.append(_result_event_block(it["entry"], it["results"]))
+
+    lines.append(SEPARATOR)
+    lines.append(_footer())
+
+    return "\n".join(lines)
+
+
 def _format_news_collapsible(num: int, item: NewsItem, a: dict) -> str:
     """
     Formatea una noticia individual de la Sección 1 con <blockquote expandable>.

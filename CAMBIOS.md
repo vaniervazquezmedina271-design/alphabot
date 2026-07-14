@@ -5,6 +5,27 @@
 
 ---
 
+## 14 de julio, 2026 (tarde)
+
+### Seguimiento de resultados (Sistema 1) — CONSOLIDADO en un solo mensaje
+
+- **Antes:** `run_results_tracking()` en `src/results_tracker.py` enviaba **un mensaje por cada** evento con resultado listo (llamaba a `format_results_followup` + `send_to_telegram` dentro del bucle).
+- **Ahora:** primero **recolecta TODOS** los seguimientos listos de la corrida (los que ya tienen valor `actual` y se re-analizaron) y luego decide cómo enviarlos:
+  - **2 o más** eventos → **UN solo mensaje consolidado**: encabezado "📊 SEGUIMIENTO DE RESULTADOS" + día/fecha, cada evento en su propio `<blockquote expandable>` (deslizamiento) y el footer AlphaBot **una sola vez** al final.
+  - **1** evento → mensaje individual (comportamiento previo con `format_results_followup`).
+- **Nuevas funciones en `src/formatter.py`:**
+  - `_result_event_block(entry, results)` → devuelve el `<blockquote expandable>` de UN evento (título, fuente, Forecast/Anterior/Actual, ✅ BEAT / ❌ MISS / ➡️ EN LÍNEA, análisis real, beneficiados/perjudicados, reacción, enlace), sin encabezado ni footer, para reutilizar.
+  - `format_results_followup_group(items)` → arma el mensaje consolidado con N desplegables y un único footer.
+- **Sin cambios en la detección de resultados:** solo cambió cómo se **agrupa el envío**. Se sigue marcando cada evento con `mark_event_followed` (no repetir) y se guarda `save_alert_backup` **por evento** (no se pierde ningún respaldo).
+- **Envío HTML:** `send_to_telegram(..., parse_mode="HTML")`; el notifier parte a 4096 chars si hace falta.
+- **Prueba (aislada, temporal):** 3 seguimientos de ejemplo → 1 solo texto con 3 `<blockquote expandable>`, 1 encabezado y 1 footer. ✅ Test borrado tras verificar.
+
+### Ejecución real del Sistema 1 (reporte de hoy)
+
+- Se ejecutó el envío REAL del reporte diario. El comando `run_report.py --daily` estaba fuera de la ventana horaria (7-8 AM NY), así que ese guard de ahorro de tokens lo omitía; se envió con `run_and_send(reasoning=False)`, que **respeta el guard anti-duplicado** `daily_report_sent_today` (estaba en False: aún no se había enviado hoy). Resultado: **reporte enviado a Telegram con 10 eventos macro** (4675 chars) y guard marcado.
+
+---
+
 ## 13 de julio, 2026
 
 ### 1. Sistema 1 (Reporte diario) — SOLO Finviz + arreglo del filtro que lo rompía

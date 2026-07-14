@@ -262,7 +262,7 @@ def run_results_tracking() -> int:
 
     Devuelve cuántos seguimientos se enviaron.
     """
-    from .formatter import format_results_followup
+    from .formatter import format_results_followup, format_results_followup_group
     from .notifier import send_to_telegram
     from .backup import save_alert_backup
     from .sources.base import NewsItem
@@ -274,7 +274,13 @@ def run_results_tracking() -> int:
 
     print(f"📊 Seguimiento de resultados: {len(pending)} evento(s) pendiente(s)")
 
-    sent_count = 0
+    # ============================================================
+    #  PASO 1 — Recolectar TODOS los seguimientos LISTOS de esta corrida
+    #  (los que ya tienen valor "actual" disponible y se re-analizaron).
+    #  NO se envía nada todavía: primero se junta todo para decidir si va
+    #  agrupado (1 solo mensaje) o individual.
+    # ============================================================
+    ready: list[dict] = []
     for event in pending:
         print(f"  🔍 Buscando resultados reales: {event['title'][:50]}...")
 
@@ -310,22 +316,57 @@ def run_results_tracking() -> int:
         entry = {"item": item, "analysis": event.get("analysis_original", {})}
         results = {"actual": actual, "analisis_real": new_analysis}
 
-        # Formatear y enviar
-        followup_text = format_results_followup(entry, results)
+        ready.append({
+            "event": event,
+            "actual": actual,
+            "new_analysis": new_analysis,
+            "entry": entry,
+            "results": results,
+        })
+
+    if not ready:
+        return 0
+
+    # ============================================================
+    #  PASO 2 — Enviar. Con MÁS DE 2 (>=3) resultados listos → UN solo
+    #  mensaje consolidado, cada evento en su propio <blockquote expandable>
+    #  y un único footer. Con 2 → también agrupados. Con 1 → mensaje individual.
+    # ============================================================
+    sent_count = 0
+
+    def _mark_and_backup(r: dict, followup_text: str) -> None:
+        """Marca como seguido y guarda backup por evento (no perder respaldo)."""
+        mark_event_followed(r["event"]["hash"], r["actual"], r["new_analysis"])
+        save_alert_backup(
+            {"title": r["event"]["title"], "actual": r["actual"], "event": r["event"]},
+            r["new_analysis"],
+            followup_text,
+        )
+
+    if len(ready) >= 2:
+        # Consolidado: un solo mensaje con todos los desplegables
+        group_payload = [{"entry": r["entry"], "results": r["results"]} for r in ready]
+        followup_text = format_results_followup_group(group_payload)
+
+        print(f"  📤 Enviando seguimiento CONSOLIDADO ({len(ready)} eventos) a Telegram...")
+        ok = send_to_telegram(followup_text, parse_mode="HTML")
+
+        if ok:
+            for r in ready:
+                sent_count += 1
+                _mark_and_backup(r, followup_text)
+            print(f"     ✅ {sent_count} seguimientos enviados en un solo mensaje")
+    else:
+        # Un solo evento → mensaje individual (comportamiento previo)
+        r = ready[0]
+        followup_text = format_results_followup(r["entry"], r["results"])
 
         print(f"  📤 Enviando seguimiento a Telegram...")
         ok = send_to_telegram(followup_text, parse_mode="HTML")
 
         if ok:
             sent_count += 1
-            mark_event_followed(event["hash"], actual, new_analysis)
-
-            # Backup del seguimiento
-            save_alert_backup(
-                {"title": event["title"], "actual": actual, "event": event},
-                new_analysis,
-                followup_text,
-            )
+            _mark_and_backup(r, followup_text)
             print(f"     ✅ Seguimiento enviado")
 
     return sent_count

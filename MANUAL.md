@@ -3,6 +3,15 @@
 > **Última actualización:** 14 de julio, 2026
 > **Ubicación del proyecto:** `C:\VANIER\AGENTE DE BUSQUEDA`
 
+> **📌 Novedades (14 jul 2026, tarde) — Seguimiento de resultados consolidado:**
+> - Cuando en una misma corrida hay **2 o más** eventos del Sistema 1 con
+>   resultados reales listos, el seguimiento llega en **UN solo mensaje**: un
+>   encabezado "📊 SEGUIMIENTO DE RESULTADOS" y **cada evento en su propio
+>   desplegable** (`<blockquote expandable>`), con el footer AlphaBot una sola
+>   vez. Si solo hay 1 evento, se envía como mensaje individual (igual que antes).
+> - Cada evento sigue mostrando Forecast vs Anterior vs Actual y ✅ BEAT /
+>   ❌ MISS / ➡️ EN LÍNEA, y se respalda por separado (backup por evento).
+>
 > **📌 Novedades (14 jul 2026) — MODO CLOUD-ONLY:**
 > - **La NUBE es el único emisor de alertas.** El bot local (`bot_local.py`) ya
 >   NO envía alertas automáticas: solo atiende comandos y publicaciones de
