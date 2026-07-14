@@ -420,3 +420,74 @@ Si eres un sub-agente trabajando en este proyecto:
 8. **Si investigas algo (web), devuelve hallazgos estructurados y accionables**
 9. **Si escribes código, prueba que funcione** antes de reportar completado
 10. **Cita `file_path:line_number` cuando referencies código existente**
+
+
+---
+
+## 12. ESTADO ACTUAL (actualizado 13 julio 2026) — LEER OBLIGATORIO
+
+> Esta sección refleja cómo quedó el proyecto tras la sesión del 13/07/2026.
+> Ante conflicto con secciones anteriores, MANDA esta. Detalle en `CAMBIOS.md`
+> y respaldo en `data/backup/ESTADO_ACTUAL_2026-07-13.md`.
+
+### Repositorio
+- `github.com/vaniervazquezmedina271-design/alphabot`, rama `main`. Todo pusheado.
+- PENDIENTE del usuario: poner el repo PÚBLICO (minutos ilimitados en Actions).
+
+### Sistema 1 (reporte diario)
+- **SOLO Finviz calendar** (forex_factory/yahoo_calendar en `enabled:false`).
+- Se ELIMINÓ `_is_us_relevant` del pipeline diario (borraba todos los eventos; Finviz
+  no rellena la moneda). Ahora solo filtra por estrellas (min_stars=2). NO filtrar por
+  país en Sistema 1 (el calendario de Finviz ya es de EE.UU.).
+- `finviz_calendar.py` usa hora NY (`_ny_today`), país por defecto USD/🇺🇸.
+- Encabezado del reporte (vía yfinance): **panorama de mercado** (`market_snapshot.py`:
+  índices, VIX, WTI, oro, 10Y, DXY; sin cripto) + **earnings próximos 7 días**
+  (`earnings_calendar.py`; ETFs omitidos).
+
+### Sistema 2 (alertas)
+- Fuentes por prioridad de dedup: **Reuters/AP** (`sources/reuters.py`, Google News RSS)
+  > Investing (CNBC/MarketWatch) > Yahoo > Finviz > Bloomberg.
+- **Modo solo-watchlist** (`watchlist.only: true`): solo noticias de la lista.
+- **Dedup variante 2** (Jaccard 0.6 / contención 0.8) + prioridad de fuente.
+- **match_company**: SOLO por TÍTULO y palabra completa (no resumen, no subcadena).
+  Tickers-palabra-común (NOW, LOW, C, V, MA, DIA, SPY, COIN, META, USO, HD, MU) solo
+  por nombre/alias (`COMMON_WORD_TICKERS` en watchlist.py).
+- **Análisis por lotes** (`analyze_batch_breaking`, lotes de 5).
+- **Máximo 1 alerta por ticker por ejecución** (mayor confianza).
+- **Anti-ruido ETFs materias primas** (USO, SLV, GLD, URA, SOXL, TNA): umbral
+  `commodity_min_score`=70 (`is_noisy_etf`).
+- **Alertas de PRECIO** (`price_alerts.py` + `price_chart.py`): mov. del día ≥
+  `price_move_pct`=5% vía yfinance → **IMAGEN profesional** (matplotlib) enviada con
+  `notifier.send_photo_to_telegram`; fallback a texto. Dedup por día+dirección.
+
+### Mensajes viejos
+- `telegram_bot.py fetch_updates`: filtro antigüedad (`TELEGRAM_MAX_MSG_AGE_SEC`=600s)
+  + confirmación server-side (2ª llamada offset=max+1). No republica lo viejo.
+
+### Ejecución / eficiencia
+- `bot_local.py` corre AMBOS sistemas (comandos 30s, breaking 5min, daily 7-8AM NY).
+  Auto-arranque Windows: `iniciar_bot.bat` + AlphaBot.lnk en shell:startup.
+- Nube: `system2-breaking.yml` cron `*/5 * * * *` (repo público).
+- Cache análisis + enviadas de **48h** (hoy+ayer NY).
+- Reparto LLM: reporte diario `prefer=["Cerebras","Google Gemini"]` (reserva Groq).
+- Health-check de fuentes (`notify_unhealthy_sources`, 3 ejecuciones a 0 → aviso).
+- Terminal: PowerShell 7 (`.vscode/settings.json`). PS 5.1 no soporta `&&` (usar `;`).
+
+### Watchlist (40, en config.yaml)
+Acciones: AMZN AAPL GOOG META MSFT NFLX TSLA PLTR IBM ORCL NOW AMD MU NVDA QCOM AVGO
+INTC DASH LYFT UBER HD LOW WMT AXP COIN PYPL MA C V.
+ETFs/índices: SOXL DIA QQQ SPY SPX IWM TNA URA USO SLV GLD.
+TSLA SIN alias "Elon Musk" (evita falsos positivos de SpaceX).
+
+### Dependencias nuevas
+yfinance>=0.2.40, matplotlib>=3.8.0 (en requirements.txt).
+
+### Módulos nuevos (src/)
+`price_alerts.py`, `price_chart.py`, `market_snapshot.py`, `earnings_calendar.py`,
+`sources/reuters.py`. notifier.py añadió `send_photo_to_telegram`.
+
+### DECISIÓN PENDIENTE
+- Imagen de alertas de precio con **Gemini Nano Banana** (`gemini-2.5-flash-image`
+  rápido / `gemini-3-pro-image` Pro con texto alta fidelidad). Opciones: (A) híbrido
+  matplotlib+fondo IA; (B) tarjeta 100% IA configurable. Tradeoffs: cuota/costo Gemini,
+  latencia, marca de agua SynthID, riesgo mínimo en números. SIN decidir.
