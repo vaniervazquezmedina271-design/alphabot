@@ -13,15 +13,15 @@ from __future__ import annotations
 #   level_pct  -> muestra nivel + cambio % (VIX)
 #   level      -> muestra solo el nivel (rendimiento del bono, en %)
 _SNAP = [
-    ("S&P 500", "^GSPC", "pct"),
-    ("Nasdaq 100", "^NDX", "pct"),
-    ("Dow Jones", "^DJI", "pct"),
-    ("Russell 2000", "^RUT", "pct"),
-    ("VIX", "^VIX", "level_pct"),
-    ("WTI petróleo", "CL=F", "pct"),
-    ("Oro", "GC=F", "pct"),
-    ("Bono 10Y", "^TNX", "level"),
-    ("Dólar (DXY)", "DX-Y.NYB", "pct"),
+    ("S&P 500 (índice 500 grandes empresas EE.UU.)", "^GSPC", "pct"),
+    ("Nasdaq 100 (índice tecnológicas)", "^NDX", "pct"),
+    ("Dow Jones (índice 30 industriales)", "^DJI", "pct"),
+    ("Russell 2000 (índice small caps)", "^RUT", "pct"),
+    ("VIX (índice del miedo / volatilidad)", "^VIX", "level_pct"),
+    ("Petróleo WTI (crudo)", "CL=F", "pct"),
+    ("Oro (onza)", "GC=F", "pct"),
+    ("Bono del Tesoro EE.UU. 10 años (rendimiento)", "^TNX", "level"),
+    ("Índice del dólar (DXY)", "DX-Y.NYB", "pct"),
 ]
 
 

@@ -197,3 +197,15 @@ Detalles:
 - Ventana de 5 días en yfinance para que futuros/índices tengan ≥2 cierres válidos (evita "+0.0%" falsos).
 - Integrado en `generate_daily_report` (se antepone a `format_daily_report`), en try/except para no romper el reporte.
 - **Probado:** S&P -0.8%, Nasdaq -1.9%, VIX 17.2 (+14.2%), WTI +11.2%, Oro -2.5%, 10Y 4.61%, DXY +0.3%.
+
+
+---
+
+## 13 de julio, 2026 — Calendario de earnings + etiquetas más claras del snapshot
+
+**Earnings próximos:** nuevo módulo `src/earnings_calendar.py` (`format_earnings_calendar`). Añade al reporte diario un bloque con las empresas de la watchlist que reportan resultados en los próximos 7 días (vía yfinance `Ticker.calendar`). Marca 🔔 HOY si reportan ese día. Los ETFs/índices se omiten (no tienen earnings). Integrado en `generate_daily_report` junto al snapshot (variable `header`). Probado: detectó C (Citigroup) 14/07 y NFLX 16/07 en 7 días; lista completa de 29 empresas en 30 días.
+
+**Snapshot más claro:** las etiquetas ahora explican qué es cada cosa:
+- S&P 500 (índice 500 grandes empresas EE.UU.), Nasdaq 100 (índice tecnológicas), Dow Jones (índice 30 industriales), Russell 2000 (índice small caps), VIX (índice del miedo / volatilidad), Petróleo WTI (crudo), Oro (onza), Bono del Tesoro EE.UU. 10 años (rendimiento), Índice del dólar (DXY).
+
+**Resumen mejoras estilo market-intel-bot:** (1) alertas de precio ✅, (2) panorama de mercado en reporte diario ✅, (3) calendario de earnings ✅.
