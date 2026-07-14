@@ -223,3 +223,27 @@ Las alertas de precio (Sistema 2b) ahora se envían como una **imagen** en vez d
 - **Probado en vivo:** imagen generada e inspeccionada (SOXL -14%, USO +8.4%, ORCL, INTC, URA), enviada a Telegram (SENT_MOVERS=5).
 
 Nota sobre imágenes/animaciones: se descartó Midjourney/IA generativa porque inventa/deforma los números (no sirve para datos exactos) y no tiene API práctica. matplotlib da una imagen profesional, fiable y ligera que funciona igual en local y en la nube. Opción futura de mayor "diseño": tarjeta HTML/CSS renderizada con navegador headless (más pesada).
+
+
+---
+
+## 13 de julio, 2026 — FIX DEFINITIVO de repeticiones (Sistema 2): estado compartido
+
+**Causa raíz encontrada:** el bot enviaba desde DOS lugares (bot local + nube GitHub
+Actions, repo público con cron activo) y **la nube olvidaba su memoria en cada
+ejecución** porque `data/cache/` está en `.gitignore` (no se sube). Cada corrida de la
+nube arrancaba sin saber qué se había enviado → repetía. Además local y nube no
+compartían estado.
+
+**Solución (Opción 2 — una sola fuente de verdad):**
+- Nuevo módulo `src/sent_state.py`: guarda las firmas de lo enviado en
+  `data/state/sent_alerts.json` (**rastreado por git**, ventana 48h, formato
+  {firma: timestamp}).
+- `report.py`: `load_sent_alerts()` lee ese estado; `run_breaking_alerts` hace
+  `pull()` al inicio (git pull en local; en la nube el checkout ya trae lo último) y
+  `record_and_sync(nuevas)` al final (git commit + push con reintentos, unión sin
+  conflictos de merge). Local y nube comparten el mismo estado → **ninguno repite**.
+- Migradas las 28 firmas del cache del día al nuevo estado (no reenvía lo de hoy).
+- Los workflows ya tienen `permissions: contents: write` para poder pushear.
+
+Con esto, corran juntos o por separado (PC encendida o apagada), no se repiten noticias.

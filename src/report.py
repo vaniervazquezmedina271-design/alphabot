@@ -345,28 +345,25 @@ def _ny_date_offset(days_ago: int) -> str:
 
 def load_sent_alerts() -> set:
     """
-    Carga las noticias ya enviadas en las últimas ~48h (hoy + ayer, hora NY).
-    Así una noticia enviada anoche no se repite hoy solo porque cambió el día.
+    Carga las firmas de noticias ya enviadas (estado COMPARTIDO local+nube,
+    en data/state/sent_alerts.json, rastreado por git, ventana 48h).
     """
-    sent: set = set()
-    for days in (1, 0):  # ayer y hoy
-        cache_file = CACHE_DIR / f"sent_alerts_{_ny_date_offset(days)}.json"
-        if cache_file.exists():
-            try:
-                with open(cache_file, "r", encoding="utf-8") as f:
-                    sent.update(json.load(f))
-            except Exception:
-                pass
-    return sent
+    try:
+        from .sent_state import load_sent_signatures
+        return load_sent_signatures()
+    except Exception:
+        return set()
 
 
 def save_sent_alerts(sent: set) -> None:
-    """Guarda las noticias enviadas hoy."""
-    today = _ny_today()
-    cache_file = CACHE_DIR / f"sent_alerts_{today}.json"
+    """
+    (Compatibilidad) El guardado real y la sincronización por git se hacen con
+    sent_state.record_and_sync() al final de run_breaking_alerts. Esta función
+    solo persiste localmente por si se llama desde otro sitio.
+    """
     try:
-        with open(cache_file, "w", encoding="utf-8") as f:
-            json.dump(list(sent), f)
+        from .sent_state import record_and_sync
+        record_and_sync(set(sent))
     except Exception:
         pass
 
@@ -462,6 +459,14 @@ def run_breaking_alerts(reasoning: bool = False, max_news: int = 15) -> int:
 
     items = items[:max_news]  # solo las más recientes (watchlist prioritarias incluidas)
 
+    # Traer el estado compartido más reciente (en local: git pull; en la nube el
+    # checkout ya lo trae) para no repetir lo que envió el otro emisor.
+    try:
+        from .sent_state import pull as _pull_state
+        _pull_state()
+    except Exception:
+        pass
+
     sent_hashes = load_sent_alerts()
     analyzed_cache = load_analyzed_cache()
     # Conjuntos de tokens de lo ya enviado, para detectar la MISMA noticia
@@ -528,6 +533,7 @@ def run_breaking_alerts(reasoning: bool = False, max_news: int = 15) -> int:
     aprobadas.sort(key=lambda a: -a["confianza"])
     sent_count = 0
     tickers_enviados: set = set()
+    nuevas_sigs: set = set()   # firmas enviadas en esta ejecución → sincronizar al final
     for a in aprobadas:
         company = a["company"]
         ticker = company["ticker"] if company else None
@@ -547,9 +553,18 @@ def run_breaking_alerts(reasoning: bool = False, max_news: int = 15) -> int:
                 tickers_enviados.add(ticker)
             sent_hashes.add(a["h"])
             sent_token_sets.append(a["toks"])
-            save_sent_alerts(sent_hashes)
+            nuevas_sigs.add(a["h"])
             # Backup automático de la alerta enviada
             save_alert_backup(a["item"].to_dict(), a["analysis"], alert_text)
+
+    # Sincronizar el estado COMPARTIDO una sola vez: guarda + git commit/push,
+    # para que ni la nube ni el bot local repitan estas noticias.
+    if nuevas_sigs:
+        try:
+            from .sent_state import record_and_sync
+            record_and_sync(nuevas_sigs)
+        except Exception as e:
+            print(f"  ⚠️ Sync estado enviadas: {e}")
 
     print(f"\n📊 {sent_count} alertas enviadas | {llm_calls} llamadas LLM (lote) | {cache_hits} cache hits (tokens ahorrados)")
     return sent_count
