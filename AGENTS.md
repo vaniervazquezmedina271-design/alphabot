@@ -426,11 +426,38 @@ Si eres un sub-agente trabajando en este proyecto:
 
 ## 12. ESTADO ACTUAL (actualizado 14 julio 2026) — LEER OBLIGATORIO
 
-> Esta sección refleja cómo quedó el proyecto tras la sesión del 14/07/2026.
+> Esta sección refleja cómo quedó el proyecto tras la sesión del 15/07/2026.
 > Ante conflicto con secciones anteriores, MANDA esta. Detalle en `CAMBIOS.md`
 > y respaldo en `data/backup/`.
 
+### SISTEMA 1 = EMISOR LOCAL PUNTUAL + NUBE RESPALDO (15 jul 2026) — MANDA sobre lo de abajo
+- **Sistema 1 (reporte diario) lo emite el BOT LOCAL** puntualmente al arrancar
+  la PC, dentro de la ventana **7-9 AM NY**. La **NUBE** (`system1-daily.yml`,
+  sin cambios) es **respaldo** (días con la PC apagada). Motivo: el usuario
+  enciende la PC ~8 AM y quiere el reporte antes de las 9 AM; el cron de GitHub
+  llega tarde (horas).
+- **DOS controles separados** en `bot_local.py` (antes un único `local_send_alerts`
+  apagaba TODO lo automático):
+  - **`local_send_daily`** (env `LOCAL_SEND_DAILY` > `coordination.local_send_daily`),
+    **default `true`** → controla `_do_daily_if_due` (Sistema 1).
+  - **`local_send_alerts`** (env `LOCAL_SEND_ALERTS` > `coordination.local_send_alerts`),
+    **default `false`** → controla `_do_breaking` (Sistema 2) + seguimiento. SIGUE
+    SOLO-NUBE.
+  - Comandos/publicar y `/report` `/breaking` manuales: SIEMPRE, sin importar flags.
+- **Sin duplicados:** `_do_daily_if_due()` NO usa marcador local; llama a
+  `run_and_send(reasoning=False)` (sin force), que respeta el **guard compartido**
+  (`data/state/daily_report.json`, `daily_report_sent_today` con pull previo, marca
+  `mark_daily_report_sent` solo tras envío exitoso, fecha NY). Quien envíe primero
+  marca; el otro se salta. Se **eliminó** el marcador local redundante
+  `data/cache/last_daily_local.txt`.
+- **Ventana 7-9 AM NY:** `_is_system1_window()` = `7 <= ny.hour <= 9` en
+  `run_report.py` Y `bot_local.py` (antes 6-11 en run_report, 7-8 en bot_local).
+  Try/except devuelve True si falla la zona horaria.
+
 ### MODO CLOUD-ONLY (14 jul 2026) — la nube es el único emisor
+> ⚠️ PARCIALMENTE SUPERADO por el bloque de arriba (15 jul): el **Sistema 1** ya
+> NO es solo-nube (lo emite el local con nube de respaldo). El **Sistema 2** SÍ
+> sigue solo-nube como se describe aquí.
 - **Solo la NUBE (GitHub Actions) emite alertas.** El bot local (`bot_local.py`)
   ya NO ejecuta automáticamente Sistema 2, Sistema 1 ni seguimiento; solo atiende
   **comandos/publicaciones** de Telegram y las acciones bajo demanda (`/report`,

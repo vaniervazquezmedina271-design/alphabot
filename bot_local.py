@@ -1,34 +1,39 @@
 #!/usr/bin/env python3
 """
-bot_local.py — AlphaBot corriendo en local (SOLO comandos/publicaciones).
+bot_local.py — AlphaBot corriendo en local.
 
-MODO CLOUD-ONLY (por defecto): la NUBE (GitHub Actions) es el ÚNICO emisor de
-alertas. El bot local NO emite alertas automáticas para eliminar de raíz las
-repeticiones (antes emitían PC + nube sin memoria común). El bot local solo:
+DOS CONTROLES SEPARADOS de emisión automática:
 
-1. COMANDOS/PUBLICAR (cada 30s): revisa Telegram y responde/publica al instante
-   (comandos, lenguaje natural, audios, fotos, documentos, videos).
+1. SISTEMA 1 (reporte diario) — EMISOR LOCAL PUNTUAL (por defecto ACTIVO):
+   el usuario enciende la PC ~8 AM (NY) y quiere el reporte antes de las 9 AM.
+   El cron de GitHub llega tarde (a veces horas), así que el bot local lo emite
+   puntualmente al arrancar la PC dentro de la ventana 7-9 AM NY. La NUBE queda
+   como RESPALDO (si la PC está apagada). El guard compartido
+   (data/state/daily_report.json) evita duplicados: quien envíe primero marca,
+   el otro se salta.
+   Control: `local_send_daily` (default TRUE). Env `LOCAL_SEND_DAILY` prioritario.
 
-2. ACCIONES BAJO DEMANDA: si el usuario manda /report o /breaking por Telegram,
-   eso SÍ se ejecuta (es acción explícita del usuario), respetando el estado
-   compartido (data/state) para no duplicar.
+2. SISTEMA 2 (alertas último minuto) + seguimiento de resultados — SOLO-NUBE
+   (por defecto INACTIVO en local). La nube (GitHub Actions) es el único emisor
+   para eliminar de raíz las repeticiones (antes emitían PC + nube sin memoria
+   común).
+   Control: `local_send_alerts` (default FALSE). Env `LOCAL_SEND_ALERTS` prioritario.
 
-FLAG DE EMISIÓN LOCAL (opt-in):
-    - Env `LOCAL_SEND_ALERTS` ("true"/"false", default "false"), o
-    - config.yaml `coordination.local_send_alerts` (default false).
-  Con el valor por defecto (cloud-only) el bot local NO manda alertas
-  automáticas (ni Sistema 2, ni Sistema 1, ni seguimiento de resultados);
-  solo atiende comandos. Si se pone en true, el bot local vuelve a emitir
-  automáticamente los tres flujos (modo antiguo PC-emisora).
+Además, SIEMPRE (independiente de los flags):
+   COMANDOS/PUBLICAR (cada 30s): revisa Telegram y responde/publica al instante
+   (comandos, lenguaje natural, audios, fotos, documentos, videos). Si el usuario
+   manda /report o /breaking, eso SÍ se ejecuta (acción explícita), respetando
+   el estado compartido (data/state) para no duplicar.
 
-La nube (GitHub Actions) es la que emite alertas 24/7. El offset de Telegram se
-comparte, así que nube y local no se pisan al leer comandos.
+El offset de Telegram se comparte, así que nube y local no se pisan al leer
+comandos.
 
 Uso:
     python bot_local.py
 
 Variables de entorno opcionales:
-    LOCAL_SEND_ALERTS        "true" para que el local también emita (default false)
+    LOCAL_SEND_DAILY         "false" para NO emitir el reporte diario en local (default true)
+    LOCAL_SEND_ALERTS        "true" para que el local también emita Sistema 2 (default false)
     BOT_LOCAL_BREAKING_SEC   segundos entre búsquedas del Sistema 2 (default 300)
     BOT_LOCAL_COMMANDS_SEC   segundos entre revisiones de Telegram (default 30)
 
@@ -54,7 +59,6 @@ sys.path.insert(0, BASE_DIR)
 
 from src.telegram_bot import process_commands, pop_trigger
 from src.report import run_breaking_alerts, run_and_send
-from src.config import CACHE_DIR
 
 try:
     from src.results_tracker import run_results_tracking
@@ -79,29 +83,45 @@ def _env_bool(name: str, default: bool) -> bool:
     return val.strip().lower() in ("1", "true", "yes", "si", "sí", "on")
 
 
-def _local_send_alerts() -> bool:
+def _coord_flag(env_name: str, cfg_key: str, default: bool) -> bool:
     """
-    ¿El bot local debe EMITIR alertas automáticas?
-
-    Por defecto FALSE (modo cloud-only): la nube es el único emisor y el local
-    solo atiende comandos. El env `LOCAL_SEND_ALERTS` tiene prioridad; si no
-    está definido, se consulta `coordination.local_send_alerts` en config.yaml.
+    Lee un flag de coordinación con prioridad: env > config.yaml > default.
     """
-    if os.environ.get("LOCAL_SEND_ALERTS") is not None:
-        return _env_bool("LOCAL_SEND_ALERTS", False)
+    if os.environ.get(env_name) is not None:
+        return _env_bool(env_name, default)
     try:
         from src.config import load_config
-        return bool(load_config().get("coordination", {}).get("local_send_alerts", False))
+        return bool(load_config().get("coordination", {}).get(cfg_key, default))
     except Exception:
-        return False
+        return default
+
+
+def _local_send_daily() -> bool:
+    """
+    ¿El bot local debe EMITIR el reporte diario (Sistema 1) automáticamente?
+
+    Por defecto TRUE: el bot local es el emisor puntual del reporte matutino
+    (7-9 AM NY); la nube es respaldo. El env `LOCAL_SEND_DAILY` tiene prioridad;
+    si no está definido, se consulta `coordination.local_send_daily` en config.yaml.
+    """
+    return _coord_flag("LOCAL_SEND_DAILY", "local_send_daily", True)
+
+
+def _local_send_alerts() -> bool:
+    """
+    ¿El bot local debe EMITIR alertas del Sistema 2 automáticamente?
+
+    Por defecto FALSE (solo-nube): la nube es el único emisor del Sistema 2 y el
+    seguimiento de resultados. El env `LOCAL_SEND_ALERTS` tiene prioridad; si no
+    está definido, se consulta `coordination.local_send_alerts` en config.yaml.
+    """
+    return _coord_flag("LOCAL_SEND_ALERTS", "local_send_alerts", False)
 
 
 COMMANDS_SEC = _env_int("BOT_LOCAL_COMMANDS_SEC", 30)   # revisar Telegram
 BREAKING_SEC = _env_int("BOT_LOCAL_BREAKING_SEC", 300)  # Sistema 2 (alertas)
-SEND_ALERTS = _local_send_alerts()                       # emisor local (opt-in)
-
-# Marcador para no repetir el reporte diario (Sistema 1) el mismo día
-_DAILY_MARKER = CACHE_DIR / "last_daily_local.txt"
+SEND_DAILY = _local_send_daily()                         # emisor local Sistema 1 (default true)
+SEND_ALERTS = _local_send_alerts()                       # emisor local Sistema 2 (default false)
 
 
 def _ny_now() -> datetime:
@@ -109,27 +129,13 @@ def _ny_now() -> datetime:
     return datetime.now(tz.gettz("America/New_York"))
 
 
-def _ny_today_str() -> str:
-    return _ny_now().strftime("%Y-%m-%d")
-
-
 def _is_system1_window() -> bool:
-    """True si en NY son entre las 7:00 y 8:59 AM."""
-    return 7 <= _ny_now().hour <= 8
-
-
-def _daily_already_sent_today() -> bool:
+    """True si en NY son entre las 7:00 y 9:59 AM (ventana matutina puntual)."""
     try:
-        return _DAILY_MARKER.exists() and _DAILY_MARKER.read_text().strip() == _ny_today_str()
-    except OSError:
-        return False
-
-
-def _mark_daily_sent() -> None:
-    try:
-        _DAILY_MARKER.write_text(_ny_today_str())
-    except OSError:
-        pass
+        return 7 <= _ny_now().hour <= 9
+    except Exception:
+        # Si falla la zona horaria, dejar pasar (mejor ejecutar que fallar)
+        return True
 
 
 # ============================================================
@@ -170,27 +176,35 @@ def _do_breaking() -> None:
 
 
 def _do_daily_if_due() -> None:
-    """Sistema 1 — reporte diario, una vez entre 7-8 AM NY."""
-    if _is_system1_window() and not _daily_already_sent_today():
-        print(f"  [{time.strftime('%H:%M:%S')}] 📅 Sistema 1: ventana 7-8 AM NY → reporte diario")
+    """
+    Sistema 1 — reporte diario, una vez entre 7-9 AM NY.
+
+    NO usa marcador local propio: delega en el GUARD COMPARTIDO. `run_and_send`
+    (sin force) hace pull del estado, comprueba `daily_report_sent_today()` y solo
+    marca `mark_daily_report_sent()` tras un envío exitoso. Así local y nube NO se
+    duplican: quien envíe primero marca; el otro se salta.
+    """
+    if _is_system1_window():
+        print(f"  [{time.strftime('%H:%M:%S')}] 📅 Sistema 1: ventana 7-9 AM NY → reporte diario (guard compartido)")
         try:
             run_and_send(reasoning=False)
-            _mark_daily_sent()
         except Exception as e:
             print(f"  [{time.strftime('%H:%M:%S')}] ⚠️ Sistema 1 error: {e}")
 
 
 def main():
     print("=" * 60)
-    print("🤖 AlphaBot — Bot Local (tiempo real, ambos sistemas)")
+    print("🤖 AlphaBot — Bot Local (Sistema 1 puntual + comandos)")
     print("=" * 60)
-    print(f"   Comandos/publicar : cada {COMMANDS_SEC}s")
+    print(f"   Comandos/publicar : cada {COMMANDS_SEC}s (siempre)")
+    if SEND_DAILY:
+        print(f"   Sistema 1 reporte : EMISOR LOCAL puntual 7-9 AM NY (nube = respaldo)")
+    else:
+        print(f"   Sistema 1 reporte : SOLO-NUBE (emisión local desactivada)")
     if SEND_ALERTS:
         print(f"   Sistema 2 alertas : cada {BREAKING_SEC}s (EMISOR LOCAL ACTIVO)")
-        print(f"   Sistema 1 reporte : 1 vez entre 7-8 AM NY")
     else:
-        print(f"   Modo CLOUD-ONLY: la NUBE es el único emisor de alertas.")
-        print(f"   El bot local solo atiende comandos y /report /breaking manuales.")
+        print(f"   Sistema 2 alertas : SOLO-NUBE (la nube es el único emisor)")
     print(f"   Detén con Ctrl+C")
     print("=" * 60)
     print()
@@ -207,22 +221,22 @@ def main():
     while True:
         now = time.time()
         try:
-            # 1) Comandos / publicar (siempre, cada ciclo)
+            # 1) Comandos / publicar (SIEMPRE, cada ciclo, sin importar flags)
             _do_commands()
 
-            # 2 y 3) EMISIÓN AUTOMÁTICA de alertas: solo si el flag está activo.
-            #   Modo cloud-only (default): la nube es el único emisor → el local
-            #   NO ejecuta Sistema 2, Sistema 1 ni seguimiento automáticamente.
+            # 2) Sistema 1 — reporte diario: emisor LOCAL puntual (default ON).
+            #    Se apoya en el guard compartido para no duplicar con la nube.
+            if SEND_DAILY:
+                if now - last_daily_check >= 300:   # revisar cada ~5 min
+                    _do_daily_if_due()
+                    last_daily_check = now
+
+            # 3) Sistema 2 — alertas + seguimiento: SOLO-NUBE por defecto.
+            #    Solo si local_send_alerts está activo (opt-in).
             if SEND_ALERTS:
-                # Sistema 2 — alertas (cada BREAKING_SEC)
                 if now - last_breaking >= BREAKING_SEC:
                     _do_breaking()
                     last_breaking = now
-
-                # Sistema 1 — reporte diario (revisar cada ~5 min)
-                if now - last_daily_check >= 300:
-                    _do_daily_if_due()
-                    last_daily_check = now
 
         except KeyboardInterrupt:
             signal_handler(None, None)

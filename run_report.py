@@ -4,7 +4,7 @@ run_report.py — Ejecuta el agente financiero.
 
 DOS SISTEMAS SEPARADOS:
 
-1. Reporte diario (default): calendario macro de las 7-8am
+1. Reporte diario (default): calendario macro de las 7-9am NY
    python run_report.py                    # reporte diario + envía a Telegram
    python run_report.py --daily            # igual
    python run_report.py --daily --no-send  # solo genera, no envía
@@ -42,20 +42,19 @@ from src.report import run_and_send, generate_daily_report, run_breaking_alerts
 
 def _is_system1_window() -> bool:
     """
-    True si la hora actual en NY está entre las 6:00 y las 11:59 AM.
+    True si la hora actual en NY está entre las 7:00 y las 9:59 AM.
 
-    VENTANA AMPLIA (6-11 AM NY) a propósito: GitHub Actions retrasa o SALTA los
-    crons con frecuencia (a veces horas). Con la ventana estrecha anterior
-    (7-8 AM) los runs que llegaban tarde se rechazaban y el reporte NUNCA salía
-    (fallaba mañanas seguidas). El guard diario `daily_report_sent_today` evita
-    que salga dos veces, así que ampliar la ventana solo tolera los retrasos de
-    GitHub sin duplicar el reporte.
+    VENTANA 7-9 AM NY: el usuario enciende la PC ~8 AM y quiere el reporte antes
+    de las 9 AM para que la noticia NO llegue vieja. El emisor puntual es el BOT
+    LOCAL; la nube es respaldo (solo enviará si cae en 7-9 AM NY y el local no lo
+    hizo). El guard diario `daily_report_sent_today` evita que salga dos veces,
+    así que local y nube nunca duplican.
     """
     try:
         from dateutil import tz
         from datetime import datetime
         ny_now = datetime.now(tz.gettz("America/New_York"))
-        return 6 <= ny_now.hour <= 11
+        return 7 <= ny_now.hour <= 9
     except Exception:
         # Si no podemos determinar la zona horaria, dejar pasar (mejor ejecutar que fallar)
         return True
@@ -124,7 +123,7 @@ def main():
         print("📅 SISTEMA 1 — Reporte diario (calendario macro)")
         print("─" * 55)
 
-        # Guard de horario: solo 7-8 AM NY (no gastar tokens todo el día)
+        # Guard de horario: solo 7-9 AM NY (no gastar tokens todo el día)
         if not _is_system1_window() and not dry_run:
             # Si fue disparado manualmente por Telegram (--no-send no está),
             # pero fuera de ventana → dejar correr (el usuario lo pidió)
@@ -134,7 +133,7 @@ def main():
                 # Fue disparado por Telegram con /report → permitir
                 pass
             else:
-                print("⏰ Fuera de ventana (7-8 AM NY). Sistema 1 omitido para ahorrar tokens.")
+                print("⏰ Fuera de ventana (7-9 AM NY). Sistema 1 omitido para ahorrar tokens.")
                 do_daily = False
 
     if do_daily:

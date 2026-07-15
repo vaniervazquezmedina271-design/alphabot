@@ -5,6 +5,21 @@
 
 ---
 
+## 15 de julio, 2026 (tarde) — Sistema 1: emisor LOCAL puntual 7-9 AM + nube de respaldo
+
+- **Decisión del usuario:** enciende la PC ~8 AM (NY) y quiere el reporte **antes de las 9 AM** (para que la noticia no sea vieja). El cron de GitHub llega tarde (horas), así que el **BOT LOCAL** emite el Sistema 1 puntualmente al arrancar la PC; la **NUBE** queda como **respaldo** (días con la PC apagada). El Sistema 2 sigue **SOLO-NUBE**.
+- **`bot_local.py` — dos controles separados** (antes un único `local_send_alerts` apagaba TODO lo automático):
+  1. **`local_send_daily`** (nuevo, default **true**): controla el reporte diario Sistema 1 (`_do_daily_if_due`). Activo por defecto → el bot local envía el Sistema 1 en la ventana matutina. Env `LOCAL_SEND_DAILY` prioritario.
+  2. **`local_send_alerts`** (existente, default **false**): controla el Sistema 2 (`_do_breaking`) + seguimiento de resultados. Sigue en false (solo-nube). Env `LOCAL_SEND_ALERTS` prioritario.
+  - En el bucle `main()`: se ejecuta `_do_daily_if_due()` si `SEND_DAILY`; `_do_breaking()` solo si `SEND_ALERTS`. Comandos/publicar SIEMPRE.
+- **Coordinación sin duplicados (local + nube):** `_do_daily_if_due()` ya NO usa marcador local. Delega en el **guard compartido**: llama a `run_and_send(reasoning=False)` (sin force), que hace `pull()` del estado, comprueba `daily_report_sent_today()` y solo marca `mark_daily_report_sent()` tras envío exitoso (`data/state/daily_report.json`, fecha NY). Quien envíe primero marca; el otro se salta. Se **eliminó el marcador local redundante** `data/cache/last_daily_local.txt` (y sus helpers `_daily_already_sent_today`/`_mark_daily_sent`).
+- **Ventana 7-9 AM NY:** `_is_system1_window()` en `run_report.py` **y** en `bot_local.py` pasó de `6-11` a **`7 <= ny.hour <= 9`** (hora NY), para que el reporte no llegue después de ~9 AM. Se mantiene el try/except que devuelve `True` si falla la zona horaria.
+- **Nube = respaldo:** `system1-daily.yml` se deja igual (cron `*/20 11-14 UTC` + guard). Con la ventana 7-9, la nube solo enviará si cae dentro de 7-9 AM NY y el local no lo hizo. Sistema 2 sin tocar.
+- **config.yaml `coordination`:** añadido `local_send_daily: true` (se mantiene `local_send_alerts: false`).
+- **Verificado (sin enviar al canal):** flags por defecto (daily=True, alerts=False) y override por env; `_is_system1_window()` True @7/8/9:59 AM NY y False @10 AM (mock de hora) en ambos módulos; `_do_daily_if_due` llama a `run_and_send` dentro de ventana y NO fuera; con guard YA marcado `run_and_send(force=False)` retorna False sin enviar. `import bot_local, run_report, src.report` OK.
+
+---
+
 ## 15 de julio, 2026 — Fix Sistema 1: ventana ampliada por retrasos de GitHub Actions
 
 - **Causa raíz (confirmada con logs):** el reporte diario falló varias mañanas seguidas porque **GitHub Actions retrasa/salta los crons durante horas**. Evidencia (`gh run list ... system1-daily.yml`, hora real de arranque en UTC):

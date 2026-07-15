@@ -1,8 +1,25 @@
 # 📖 Manual de Instrucciones — AlphaBot (Agente de Búsqueda Financiera)
 
-> **Última actualización:** 14 de julio, 2026
+> **Última actualización:** 15 de julio, 2026
 > **Ubicación del proyecto:** `C:\VANIER\AGENTE DE BUSQUEDA`
 
+> **📌 Novedades (15 jul 2026, tarde) — Sistema 1 lo emite tu PC, puntual 7-9 AM:**
+> - Enciendes la PC ~8 AM y quieres el reporte **antes de las 9 AM** (para que la
+>   noticia no sea vieja). Ahora el **bot local** (tu PC) es el **emisor puntual**
+>   del reporte diario (Sistema 1) en la ventana **7-9 AM (hora de Nueva York)**.
+>   La **nube** queda como **respaldo** para días con la PC apagada.
+> - **Nunca se duplica:** local y nube comparten un guard (quien envíe primero
+>   marca "ya enviado hoy"; el otro se salta).
+> - **Dos interruptores independientes** en `config.yaml` (sección `coordination`)
+>   o por variable de entorno (esta manda sobre el config):
+>   - **`local_send_daily`** (env `LOCAL_SEND_DAILY`), **default `true`** →
+>     el reporte diario (Sistema 1) lo emite tu PC. Ponlo en `false` para dejarlo
+>     100% a la nube.
+>   - **`local_send_alerts`** (env `LOCAL_SEND_ALERTS`), **default `false`** →
+>     las alertas de Último Minuto (Sistema 2) siguen **solo-nube**.
+> - El **Sistema 2** (alertas) y el seguimiento de resultados **no cambian**:
+>   siguen emitiéndose solo desde la nube.
+>
 > **📌 Novedades (14 jul 2026, noche) — Sistema 1 rediseñado:**
 > - El reporte diario ahora llega en **3 mensajes separados**: (a) **panorama de
 >   mercado** simplificado, (b) **earnings próximos**, y (c) el **reporte de
