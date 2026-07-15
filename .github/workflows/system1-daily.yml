@@ -2,29 +2,28 @@ name: Sistema 1 — Reporte diario
 
 # ============================================================
 #  Reporte diario de calendario macro.
-#  Solo corre entre 7-8 AM hora de Nueva York (guard de ventana en Python).
+#  Corre por la mañana hora de Nueva York (guard de ventana 6-11 AM NY en Python).
 #  GitHub Actions cron va en UTC:
-#    - 11 UTC = 7 AM EDT (horario de verano)
-#    - 12 UTC = 7 AM EST (horario de invierno)
+#    - 11-14 UTC ≈ 7-10 AM EDT (horario de verano)
+#    - (en invierno esa franja UTC cae 6-9 AM EST, también dentro de la ventana)
 #
-#  FIABILIDAD: GitHub retrasa o SALTA los crons "a la hora en punto" (minuto 0),
-#  sobre todo en horas de mucha carga. Para no perder el reporte, disparamos a
-#  MINUTOS DESFASADOS y VARIAS VECES dentro de la ventana (minutos 15, 35 y 55
-#  de las horas 11 y 12 UTC). El guard "reporte diario ya enviado hoy" del
-#  estado compartido (data/state/daily_report.json) garantiza que, aunque
-#  dispare varias veces, el reporte salga UNA sola vez al día.
+#  FIABILIDAD: GitHub retrasa o SALTA los crons con frecuencia (a veces HORAS).
+#  Con la ventana estrecha anterior (7-8 AM) los runs retrasados llegaban fuera
+#  de ventana y el reporte NO salía (fallaba mañanas seguidas). Ahora disparamos
+#  CADA 20 MINUTOS durante toda la franja de la mañana (11:00-14:59 UTC) para
+#  tolerar retrasos/saltos de GitHub, y el guard "reporte diario ya enviado hoy"
+#  (data/state/daily_report.json) garantiza que salga UNA sola vez al día.
 # ============================================================
 
 on:
   schedule:
-    - cron: '15,35,55 11 * * *'   # 7 AM EDT (verano), 3 intentos desfasados
-    - cron: '15,35,55 12 * * *'   # 7 AM EST (invierno), 3 intentos desfasados
+    - cron: '*/20 11-14 * * *'   # cada 20 min, 11:00-14:59 UTC (~7-10:59 AM ET)
   workflow_dispatch:
 
 jobs:
   daily-report:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: write   # necesario para commitear watchlist/config
 

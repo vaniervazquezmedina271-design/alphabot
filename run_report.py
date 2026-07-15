@@ -42,14 +42,20 @@ from src.report import run_and_send, generate_daily_report, run_breaking_alerts
 
 def _is_system1_window() -> bool:
     """
-    True si la hora actual en NY está entre 7:00 y 8:59 AM.
-    El Sistema 1 solo corre en esta ventana para ahorrar tokens.
+    True si la hora actual en NY está entre las 6:00 y las 11:59 AM.
+
+    VENTANA AMPLIA (6-11 AM NY) a propósito: GitHub Actions retrasa o SALTA los
+    crons con frecuencia (a veces horas). Con la ventana estrecha anterior
+    (7-8 AM) los runs que llegaban tarde se rechazaban y el reporte NUNCA salía
+    (fallaba mañanas seguidas). El guard diario `daily_report_sent_today` evita
+    que salga dos veces, así que ampliar la ventana solo tolera los retrasos de
+    GitHub sin duplicar el reporte.
     """
     try:
         from dateutil import tz
         from datetime import datetime
         ny_now = datetime.now(tz.gettz("America/New_York"))
-        return 7 <= ny_now.hour <= 8
+        return 6 <= ny_now.hour <= 11
     except Exception:
         # Si no podemos determinar la zona horaria, dejar pasar (mejor ejecutar que fallar)
         return True

@@ -5,6 +5,21 @@
 
 ---
 
+## 15 de julio, 2026 — Fix Sistema 1: ventana ampliada por retrasos de GitHub Actions
+
+- **Causa raíz (confirmada con logs):** el reporte diario falló varias mañanas seguidas porque **GitHub Actions retrasa/salta los crons durante horas**. Evidencia (`gh run list ... system1-daily.yml`, hora real de arranque en UTC):
+  - Cron programado: `15,35,55 11 UTC` y `15,35,55 12 UTC` (7 AM NY).
+  - Arranques reales: 7/12 → 14:42 y 15:38 UTC; 7/13 → 18:13 y 18:19 UTC; 7/14 → 16:02 y 16:43 UTC.
+  - El log del run confirma: `⏰ Fuera de ventana (7-8 AM NY). Sistema 1 omitido`. Al llegar 4-6 h tarde, la ventana estrecha (7-8 AM NY) rechazaba TODOS los runs y el reporte nunca salía. El código del guard usaba la hora NY correctamente; el problema era la combinación cron-tardío + ventana-estrecha.
+- **Fix:**
+  1. `run_report.py` → `_is_system1_window()`: ventana **ampliada a `6 <= ny_now.hour <= 11`** (antes 7-8). Tolera los retrasos de GitHub. Se mantiene el `try/except` que devuelve `True` si falla la zona horaria.
+  2. `.github/workflows/system1-daily.yml`: cron reemplazado por `*/20 11-14 * * *` (**cada 20 min entre 11:00-14:59 UTC ≈ 7-10:59 AM ET**), más intentos para tolerar saltos. `timeout-minutes` subido a 15. Se mantiene `permissions: contents: write`.
+  3. `src/report.py` → `run_and_send`: **try/except alrededor de panorama y earnings** (build + envío). Si las llamadas lentas de yfinance fallan, el reporte de eventos (lo principal) se envía igual.
+- **Anti-duplicado intacto:** el guard `daily_report_sent_today()` / `mark_daily_report_sent()` (`data/state/daily_report.json`, fecha NY) solo se marca **tras envío EXITOSO** (`if ok:`), así que aunque el cron dispare muchas veces al día, el reporte sale UNA sola vez. `/report` manual usa `force=True`.
+- **Verificado:** `import src.report, run_report` OK. Envío manual del reporte de hoy: 29 eventos del calendario Finviz, **10 con 2+ estrellas, los 10 enviados** al canal (3 mensajes: panorama, earnings, reporte con desplegables). `✅ Reporte enviado a Telegram.`
+
+---
+
 ## 14 de julio, 2026 — Fix Cerebras: `reasoning` solo a proveedores que lo soportan
 
 - **Bug:** con `active.reasoning: true`, Cerebras (`gpt-oss-120b`) devolvía error 400 `"reasoning: property 'reasoning' is unsupported"` y el failover saltaba a Gemini, desperdiciando un proveedor de respaldo. Groq tampoco soporta ese parámetro.

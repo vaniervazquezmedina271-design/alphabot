@@ -336,8 +336,20 @@ def run_and_send(reasoning: bool = True, force: bool = False) -> bool:
             print(f"  ⚠️ Guard reporte diario: {e}")
 
     # Generar los tres bloques como MENSAJES SEPARADOS.
-    snapshot = build_market_snapshot_message()   # (a) panorama de mercado
-    earnings = build_earnings_message()           # (b) earnings próximos
+    # (a) panorama y (b) earnings usan yfinance (llamadas de red LENTAS que a
+    # veces fallan o tardan). Van envueltos en try/except para que, si fallan,
+    # NO tumben el envío del reporte de eventos (c), que es lo principal.
+    try:
+        snapshot = build_market_snapshot_message()   # (a) panorama de mercado
+    except Exception as e:
+        snapshot = ""
+        print(f"  ⚠️ Panorama de mercado falló (se omite): {e}")
+    try:
+        earnings = build_earnings_message()           # (b) earnings próximos
+    except Exception as e:
+        earnings = ""
+        print(f"  ⚠️ Earnings próximos falló (se omite): {e}")
+
     report_text, entries = generate_daily_report(reasoning)  # (c) eventos
     print(f"\n📊 Reporte generado ({len(report_text)} chars, {len(entries)} eventos)")
 
@@ -345,11 +357,18 @@ def run_and_send(reasoning: bool = True, force: bool = False) -> bool:
     notify_unhealthy_sources()
 
     # Enviar en orden: (a) panorama, (b) earnings, (c) reporte de eventos.
-    # Cada uno es un mensaje independiente de Telegram.
+    # Cada uno es un mensaje independiente de Telegram. Panorama y earnings van
+    # protegidos: si el envío falla, el reporte principal (c) se manda igual.
     if snapshot:
-        send_to_telegram(snapshot)
+        try:
+            send_to_telegram(snapshot)
+        except Exception as e:
+            print(f"  ⚠️ Envío del panorama falló (se omite): {e}")
     if earnings:
-        send_to_telegram(earnings)
+        try:
+            send_to_telegram(earnings)
+        except Exception as e:
+            print(f"  ⚠️ Envío de earnings falló (se omite): {e}")
 
     ok = send_to_telegram(report_text)
     if ok:
