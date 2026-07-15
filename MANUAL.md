@@ -30,8 +30,9 @@
 >     100% a la nube.
 >   - **`local_send_alerts`** (env `LOCAL_SEND_ALERTS`), **default `false`** →
 >     las alertas de Último Minuto (Sistema 2) siguen **solo-nube**.
-> - El **Sistema 2** (alertas) y el seguimiento de resultados **no cambian**:
->   siguen emitiéndose solo desde la nube.
+> - El **Sistema 2** (alertas) **no cambia**: sigue emitiéndose solo desde la nube.
+>   (El **seguimiento de resultados** SÍ cambió: ahora lo hace tu PC — ver el
+>   bloque de arriba "15 jul 2026, noche".)
 >
 > **📌 Novedades (14 jul 2026, noche) — Sistema 1 rediseñado:**
 > - El reporte diario ahora llega en **3 mensajes separados**: (a) **panorama de
