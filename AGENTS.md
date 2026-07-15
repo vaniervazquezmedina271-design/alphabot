@@ -430,6 +430,17 @@ Si eres un sub-agente trabajando en este proyecto:
 > Ante conflicto con secciones anteriores, MANDA esta. Detalle en `CAMBIOS.md`
 > y respaldo en `data/backup/`.
 
+### SEGUIMIENTO DE RESULTADOS = BOT LOCAL (15 jul 2026, noche) — MANDA
+- **El seguimiento de resultados del Sistema 1 lo ejecuta el BOT LOCAL cada ~10 min
+  durante el día (mientras la PC esté encendida).** Antes vivía en `_do_breaking()`
+  (Sistema 2, `local_send_alerts=false`) y NUNCA corría; además los eventos a seguir
+  los escribe el bot LOCAL en `data/cache/tracked_events_DATE.json` (la nube no ve ese
+  archivo). En `bot_local.py`: `RESULTS_SEC` (env `BOT_LOCAL_RESULTS_SEC`, default 600),
+  función `_do_results_tracking()`, se llama dentro de `if SEND_DAILY:` en `main()`
+  TODO EL DÍA (no solo ventana 7-9, porque los datos reales salen a distintas horas).
+  Se quitó del `_do_breaking()`. Anti-duplicado propio (`followed`/`mark_event_followed`)
+  evita reenvíos. Detalle en `CAMBIOS.md`.
+
 ### SISTEMA 1 = EMISOR LOCAL PUNTUAL + NUBE RESPALDO (15 jul 2026) — MANDA sobre lo de abajo
 - **Sistema 1 (reporte diario) lo emite el BOT LOCAL** puntualmente al arrancar
   la PC, dentro de la ventana **7-9 AM NY**. La **NUBE** (`system1-daily.yml`,

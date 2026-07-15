@@ -4,19 +4,25 @@ bot_local.py — AlphaBot corriendo en local.
 
 DOS CONTROLES SEPARADOS de emisión automática:
 
-1. SISTEMA 1 (reporte diario) — EMISOR LOCAL PUNTUAL (por defecto ACTIVO):
-   el usuario enciende la PC ~8 AM (NY) y quiere el reporte antes de las 9 AM.
-   El cron de GitHub llega tarde (a veces horas), así que el bot local lo emite
-   puntualmente al arrancar la PC dentro de la ventana 7-9 AM NY. La NUBE queda
-   como RESPALDO (si la PC está apagada). El guard compartido
-   (data/state/daily_report.json) evita duplicados: quien envíe primero marca,
-   el otro se salta.
+1. SISTEMA 1 (reporte diario + seguimiento de resultados) — EMISOR LOCAL
+   (por defecto ACTIVO):
+   - Reporte diario: el usuario enciende la PC ~8 AM (NY) y quiere el reporte
+     antes de las 9 AM. El cron de GitHub llega tarde (a veces horas), así que el
+     bot local lo emite puntualmente al arrancar la PC dentro de la ventana
+     7-9 AM NY. La NUBE queda como RESPALDO (si la PC está apagada). El guard
+     compartido (data/state/daily_report.json) evita duplicados: quien envíe
+     primero marca, el otro se salta.
+   - Seguimiento de resultados: los eventos a seguir los escribe el BOT LOCAL en
+     data/cache/tracked_events_DATE.json al generar el reporte matutino; la nube
+     no ve ese archivo. Por eso el seguimiento corre en el BOT LOCAL, cada
+     ~10 min DURANTE TODO EL DÍA (los datos reales salen a distintas horas, no
+     solo en la ventana matutina). `run_results_tracking` tiene anti-duplicado
+     propio, así que correrlo repetidamente NO reenvía lo ya enviado.
    Control: `local_send_daily` (default TRUE). Env `LOCAL_SEND_DAILY` prioritario.
 
-2. SISTEMA 2 (alertas último minuto) + seguimiento de resultados — SOLO-NUBE
-   (por defecto INACTIVO en local). La nube (GitHub Actions) es el único emisor
-   para eliminar de raíz las repeticiones (antes emitían PC + nube sin memoria
-   común).
+2. SISTEMA 2 (alertas último minuto) — SOLO-NUBE (por defecto INACTIVO en local).
+   La nube (GitHub Actions) es el único emisor para eliminar de raíz las
+   repeticiones (antes emitían PC + nube sin memoria común).
    Control: `local_send_alerts` (default FALSE). Env `LOCAL_SEND_ALERTS` prioritario.
 
 Además, SIEMPRE (independiente de los flags):
@@ -35,6 +41,7 @@ Variables de entorno opcionales:
     LOCAL_SEND_DAILY         "false" para NO emitir el reporte diario en local (default true)
     LOCAL_SEND_ALERTS        "true" para que el local también emita Sistema 2 (default false)
     BOT_LOCAL_BREAKING_SEC   segundos entre búsquedas del Sistema 2 (default 300)
+    BOT_LOCAL_RESULTS_SEC    segundos entre seguimientos de resultados Sistema 1 (default 600)
     BOT_LOCAL_COMMANDS_SEC   segundos entre revisiones de Telegram (default 30)
 
 Detén con Ctrl+C.
@@ -120,6 +127,7 @@ def _local_send_alerts() -> bool:
 
 COMMANDS_SEC = _env_int("BOT_LOCAL_COMMANDS_SEC", 30)   # revisar Telegram
 BREAKING_SEC = _env_int("BOT_LOCAL_BREAKING_SEC", 300)  # Sistema 2 (alertas)
+RESULTS_SEC = _env_int("BOT_LOCAL_RESULTS_SEC", 600)    # Sistema 1 (seguimiento resultados)
 SEND_DAILY = _local_send_daily()                         # emisor local Sistema 1 (default true)
 SEND_ALERTS = _local_send_alerts()                       # emisor local Sistema 2 (default false)
 
@@ -159,7 +167,12 @@ def _do_commands() -> None:
 
 
 def _do_breaking() -> None:
-    """Sistema 2 — alertas en tiempo real (solo tu watchlist)."""
+    """
+    Sistema 2 — alertas en tiempo real (solo tu watchlist).
+
+    NOTA: el seguimiento de resultados YA NO se ejecuta aquí. Pertenece al
+    Sistema 1 y lo corre `_do_results_tracking()` durante todo el día.
+    """
     print(f"  [{time.strftime('%H:%M:%S')}] 🚨 Sistema 2: buscando noticias...")
     try:
         sent = run_breaking_alerts(reasoning=False)
@@ -167,12 +180,17 @@ def _do_breaking() -> None:
     except Exception as e:
         print(f"  [{time.strftime('%H:%M:%S')}] ⚠️ Sistema 2 error: {e}")
 
-    # Seguimiento de resultados (Sección 1) si aplica
-    if run_results_tracking:
-        try:
-            run_results_tracking()
-        except Exception as e:
-            print(f"  [{time.strftime('%H:%M:%S')}] ⚠️ Seguimiento error: {e}")
+
+def _do_results_tracking() -> None:
+    """Sistema 1 — seguimiento de resultados de eventos programados (durante el día)."""
+    if not run_results_tracking:
+        return
+    try:
+        n = run_results_tracking()
+        if n and n > 0:
+            print(f"  [{time.strftime('%H:%M:%S')}] 📊 Sistema 1: {n} seguimiento(s) de resultados enviado(s)")
+    except Exception as e:
+        print(f"  [{time.strftime('%H:%M:%S')}] ⚠️ Seguimiento error: {e}")
 
 
 def _do_daily_if_due() -> None:
@@ -199,6 +217,7 @@ def main():
     print(f"   Comandos/publicar : cada {COMMANDS_SEC}s (siempre)")
     if SEND_DAILY:
         print(f"   Sistema 1 reporte : EMISOR LOCAL puntual 7-9 AM NY (nube = respaldo)")
+        print(f"   Seguim. resultados: cada {RESULTS_SEC}s durante el día (Sistema 1)")
     else:
         print(f"   Sistema 1 reporte : SOLO-NUBE (emisión local desactivada)")
     if SEND_ALERTS:
@@ -217,6 +236,7 @@ def main():
 
     last_breaking = 0.0
     last_daily_check = 0.0
+    last_results = 0.0
 
     while True:
         now = time.time()
@@ -230,6 +250,13 @@ def main():
                 if now - last_daily_check >= 300:   # revisar cada ~5 min
                     _do_daily_if_due()
                     last_daily_check = now
+
+                # Seguimiento de resultados (Sistema 1): TODO EL DÍA, cada RESULTS_SEC.
+                # Los datos reales salen a distintas horas, por eso NO se limita a
+                # la ventana 7-9 AM. Anti-duplicado propio evita reenvíos.
+                if now - last_results >= RESULTS_SEC:
+                    _do_results_tracking()
+                    last_results = now
 
             # 3) Sistema 2 — alertas + seguimiento: SOLO-NUBE por defecto.
             #    Solo si local_send_alerts está activo (opt-in).

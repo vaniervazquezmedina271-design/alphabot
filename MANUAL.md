@@ -3,6 +3,19 @@
 > **Última actualización:** 15 de julio, 2026
 > **Ubicación del proyecto:** `C:\VANIER\AGENTE DE BUSQUEDA`
 
+> **📌 Novedades (15 jul 2026, noche) — El seguimiento de resultados lo hace tu PC:**
+> - El **seguimiento de resultados** del Sistema 1 (cuando un evento del reporte
+>   matutino publica su dato real: ✅ BEAT / ❌ MISS / ➡️ EN LÍNEA) ahora lo
+>   ejecuta el **bot local** (tu PC) **cada ~10 min durante todo el día**, mientras
+>   la PC esté encendida. Antes estaba atado al Sistema 2 (solo-nube) y **nunca
+>   corría**, porque los eventos a seguir los guarda tu PC en un archivo local que
+>   la nube no ve.
+> - **No se repite:** el seguimiento tiene memoria propia; aunque se revise cada
+>   10 min, cada resultado se envía una sola vez.
+> - Se controla con el mismo interruptor del reporte diario: `local_send_daily`
+>   (env `LOCAL_SEND_DAILY`, default `true`). Ajustable con env
+>   `BOT_LOCAL_RESULTS_SEC` (segundos entre revisiones, default 600).
+>
 > **📌 Novedades (15 jul 2026, tarde) — Sistema 1 lo emite tu PC, puntual 7-9 AM:**
 > - Enciendes la PC ~8 AM y quieres el reporte **antes de las 9 AM** (para que la
 >   noticia no sea vieja). Ahora el **bot local** (tu PC) es el **emisor puntual**

@@ -5,6 +5,22 @@
 
 ---
 
+## 15 de julio, 2026 (noche) — Seguimiento de resultados (Sistema 1) lo ejecuta el BOT LOCAL
+
+- **Causa raíz:** el seguimiento de resultados (`run_results_tracking`) vivía dentro de `_do_breaking()` en `bot_local.py`, gobernado por `local_send_alerts` (default `false`) → **nunca corría en local**. Pero los eventos a seguir los escribe el **bot LOCAL** en `data/cache/tracked_events_DATE.json` al generar el reporte matutino (~8 AM, `src/report.py` → `track_events_from_report`). La **nube no ve ese archivo**, así que el seguimiento tampoco salía por la nube. Resultado: no se enviaban seguimientos. **Conclusión:** el seguimiento debe correr en el **BOT LOCAL** como parte del **Sistema 1**.
+- **`bot_local.py` — cambios:**
+  1. Nuevo `RESULTS_SEC = _env_int("BOT_LOCAL_RESULTS_SEC", 600)` (cada 10 min).
+  2. Nueva función `_do_results_tracking()`: llama a `run_results_tracking()` y reporta cuántos seguimientos se enviaron; captura errores.
+  3. **Se QUITÓ** la llamada a `run_results_tracking()` de `_do_breaking()` (el seguimiento ya NO pertenece al Sistema 2).
+  4. En `main()`: `last_results = 0.0`; dentro de `if SEND_DAILY:` se ejecuta `_do_results_tracking()` cada `RESULTS_SEC`. Corre **TODO EL DÍA** (no solo la ventana 7-9 AM): los datos reales salen a distintas horas. NO se mete en `_is_system1_window()`.
+  5. Banner nuevo cuando `SEND_DAILY`: "Seguim. resultados: cada Ns durante el día (Sistema 1)".
+  6. Docstrings del módulo y de `_do_breaking` actualizados; env `BOT_LOCAL_RESULTS_SEC` añadido a la lista de variables.
+- **Sin reenvíos:** `run_results_tracking` ya tiene anti-duplicado (`followed`/`mark_event_followed`), así que correrlo cada 10 min NO reenvía lo ya enviado (esa lógica no se tocó).
+- **NO se tocó:** `run_report.py` PASO 0b, el guard compartido del reporte diario, el Sistema 2 ni la ventana 7-9.
+- **Verificado (sin enviar al canal):** `import bot_local` OK; `RESULTS_SEC=600`; `_do_results_tracking` existe; `_do_breaking` ya NO llama al seguimiento; con `SEND_DAILY=False` el bucle no lo invoca; `run_results_tracking()` retorna `0` sin enviar cuando `check_pending_results()` está vacío.
+
+---
+
 ## 15 de julio, 2026 (tarde) — Sistema 1: emisor LOCAL puntual 7-9 AM + nube de respaldo
 
 - **Decisión del usuario:** enciende la PC ~8 AM (NY) y quiere el reporte **antes de las 9 AM** (para que la noticia no sea vieja). El cron de GitHub llega tarde (horas), así que el **BOT LOCAL** emite el Sistema 1 puntualmente al arrancar la PC; la **NUBE** queda como **respaldo** (días con la PC apagada). El Sistema 2 sigue **SOLO-NUBE**.
