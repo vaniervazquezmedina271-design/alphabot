@@ -3,6 +3,48 @@
 > **Última actualización:** 15 de julio, 2026
 > **Ubicación del proyecto:** `C:\VANIER\AGENTE DE BUSQUEDA`
 
+> **📌 Novedades (15 jul 2026) — Seguimiento de DISCURSOS y comparecencias (Fed, testimonios):**
+> Hasta ahora el seguimiento del Sistema 1 solo servía para eventos con **número**
+> (inflación, empleo…), donde se mira si el dato real superó o falló el pronóstico
+> (✅ BEAT / ❌ MISS). Pero un **discurso** o **comparecencia** (por ejemplo el
+> presidente de la Fed hablando ante el Congreso) **no tiene un número**: lo que
+> importa es **cómo reacciona el mercado** a lo que dice, y esa reacción puede
+> cambiar de sentido (a favor y en contra) mientras habla.
+>
+> **Cómo funciona ahora (reparto de roles, sin repetir contenido):**
+> - **Comentarios al instante (Sistema 2, nube):** los titulares de alto impacto
+>   del discurso llegan en tiempo real como alertas de "Último Minuto".
+> - **Reacción del mercado (Sistema 1, tu PC, cada ~30 min):** mientras dura el
+>   discurso, el bot manda **actualizaciones** con el movimiento de los 4 índices
+>   de referencia (S&P 500 / Nasdaq 100 / Russell 2000 / Dow Jones vía SPY/QQQ/
+>   IWM/DIA), mostrando el **giro** de cada tramo (ej. "S&P 500 −0.30% (−0.20 vs
+>   anterior)"), la dirección global y estrellas 1-5.
+> - **Cierre al terminar:** cuando acaba la ventana del discurso, un mensaje de
+>   **cierre** con el movimiento **neto** de cada índice y su **rango** del
+>   discurso ("máx +0.40% / mín −0.60%"), más una síntesis de cómo reaccionó.
+> - **Sin repetir:** el Sistema 1 **no menciona** los titulares que el Sistema 2
+>   ya alertó (memoria compartida de enviados).
+> - **Ahorro de tokens:** si el mercado casi no se mueve y no hay titular nuevo,
+>   ese tramo **se salta** (no llama al LLM ni envía nada).
+> - **Los eventos numéricos NO cambian:** siguen con su ✅ BEAT / ❌ MISS de siempre,
+>   y el reporte diario queda igual.
+>
+> **Ajustes (variables de entorno, con valores por defecto si no las pones):**
+> - `SPEECH_WINDOW_MIN` — duración de la ventana del discurso en minutos (**120**).
+> - `SPEECH_UPDATE_MIN` — cada cuántos minutos, como mucho, manda una actualización (**30**).
+> - `SPEECH_MIN_MOVE_PCT` — movimiento mínimo (%) de los ETFs para molestar en
+>   reportar un tramo; por debajo de esto y sin titular nuevo, se salta (**0.15**).
+>
+> También se pueden fijar en `config.yaml` bajo la sección `speech`
+> (`window_min`, `update_min`, `min_move_pct`); la variable de entorno tiene
+> prioridad sobre el `config.yaml`.
+>
+> **Fed = alto impacto siempre (Sistema 2):** las declaraciones de la Fed / FOMC /
+> bancos centrales sobre tasas, inflación o política monetaria ahora se puntúan
+> como alto impacto **aunque no nombren una empresa concreta**, para que pasen el
+> filtro del Sistema 2 (afectan a los índices que sigues). No se bajó ningún
+> umbral: solo se instruyó al analizador a valorarlas como lo que son.
+
 > **📌 Novedades (15 jul 2026) — Fix: los seguimientos ahora sí llegan (y si algo falla, se nota):**
 > - **Problema:** los 3 seguimientos de resultados no se veían en el canal aunque
 >   el sistema los marcaba como enviados. Diagnóstico en vivo: el canal era el

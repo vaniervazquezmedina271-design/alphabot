@@ -430,6 +430,35 @@ Si eres un sub-agente trabajando en este proyecto:
 > Ante conflicto con secciones anteriores, MANDA esta. Detalle en `CAMBIOS.md`
 > y respaldo en `data/backup/`.
 
+### SEGUIMIENTO DE DISCURSOS/COMPARECENCIAS = OPCIÓN 3 (15 jul 2026) — MANDA
+- El seguimiento del Sistema 1 ahora maneja DOS tipos de evento:
+  - **Numéricos** → flujo BEAT/MISS de siempre (`_run_numeric_tracking`), intacto.
+  - **Discursos/comparecencias** (Fed testimony, "speech"/"speaks"/"testifies"/
+    "remarks"/"statement", o forecast NO numérico) → `run_speech_tracking()`.
+- `_is_speech_event()` decide el tipo. `check_pending_results()` excluye discursos.
+- **Reparto de roles (sin duplicar):** Sistema 2 (nube) manda los COMENTARIOS al
+  instante; Sistema 1 (local, cada ~10 min) manda la REACCIÓN del mercado (ETFs
+  SPY/QQQ/IWM/DIA) por tramos con GIROS, y un CIERRE con neto + rango alza/baja.
+- **Nuevo módulo `src/market_reaction.py`** (`etf_reaction_since`): % intradía (5m)
+  desde el inicio del discurso + `max_up`/`max_down` (rango) + sesgo agregado.
+  yfinance; nunca lanza (marca el ETF que falle).
+- **Estado por evento en `tracked_events`:** `last_speech_update_at`,
+  `speech_updates_sent`, `prev_reaction` (para el giro), `speech_closed`,
+  `speech_seen_titles`. Discursos usan `speech_closed` (NO `followed`).
+- **Dedup cruzada:** `_fetch_speech_headlines` excluye titulares cuyo hash ya esté
+  en `sent_state` (misma `get_sent_hash` del Sistema 2) → no re-menciona lo alertado.
+- **Ahorro de tokens:** tramo con `|máx move| < SPEECH_MIN_MOVE_PCT` y sin titular
+  nuevo → se salta (no LLM, no envío), pero actualiza `last_speech_update_at` y
+  `prev_reaction`.
+- **Formato** (`formatter.py`): `format_speech_update` (giro entre paréntesis) y
+  `format_speech_close` (rango máx/mín). Nombres legibles S&P 500/Nasdaq 100/
+  Russell 2000/Dow Jones.
+- **`system_prompt.md`:** declaraciones Fed/FOMC/bancos centrales = alto impacto
+  (confianza ≥70%, estrellas 4-5) aunque no citen ticker → pasan umbral Sistema 2.
+  NO se bajaron umbrales.
+- **Env/config (defaults):** `SPEECH_WINDOW_MIN=120`, `SPEECH_UPDATE_MIN=30`,
+  `SPEECH_MIN_MOVE_PCT=0.15` (env > `config.yaml` sección `speech` > default).
+
 ### SEGUIMIENTO DE RESULTADOS = BOT LOCAL (15 jul 2026, noche) — MANDA
 - **El seguimiento de resultados del Sistema 1 lo ejecuta el BOT LOCAL cada ~10 min
   durante el día (mientras la PC esté encendida).** Antes vivía en `_do_breaking()`

@@ -482,6 +482,214 @@ def format_results_followup_group(items: list[dict]) -> str:
     return "\n".join(lines)
 
 
+# ============================================================
+#  SECCIÓN 1b — SEGUIMIENTO DE DISCURSOS / COMPARECENCIAS
+#  (reacción del mercado a lo que dijo el ponente: SPY/QQQ/IWM/DIA)
+# ============================================================
+
+_SPEECH_ETF_ORDER = ["SPY", "QQQ", "IWM", "DIA"]
+
+_DIR_LABEL = {
+    "positiva": "📈 Reacción positiva",
+    "negativa": "📉 Reacción negativa",
+    "mixta": "↔️ Reacción mixta",
+}
+
+_BIAS_TO_DIR = {
+    "positivo": "positiva",
+    "negativo": "negativa",
+    "mixto": "mixta",
+    "neutral": "mixta",
+}
+
+_BIAS_LABEL = {
+    "positivo": "📈 Sesgo positivo",
+    "negativo": "📉 Sesgo negativo",
+    "mixto": "↔️ Sesgo mixto",
+    "neutral": "➡️ Sin sesgo claro",
+}
+
+
+def _bias_to_dir(bias: str) -> str:
+    return _BIAS_TO_DIR.get((bias or "").lower(), "mixta")
+
+
+def _fmt_pct(pct: float) -> str:
+    """Formatea un % con signo explícito (+/−, usando el signo menos tipográfico)."""
+    signo = "+" if pct >= 0 else "−"
+    return f"{signo}{abs(pct):.2f}%"
+
+
+def _speech_etf_lines(reaction: dict, giro: dict | None = None) -> list[str]:
+    """
+    Una línea por ETF: nombre legible + % desde inicio con signo + flecha.
+    Si se pasa `giro` (dict {ticker: delta_vs_anterior}), añade entre paréntesis
+    el GIRO del tramo, ej: "S&P 500 −0.30% 📉 (−0.20 vs anterior)".
+    """
+    lines = []
+    etfs = reaction.get("etfs") or {}
+    giro = giro or {}
+    for t in _SPEECH_ETF_ORDER:
+        d = etfs.get(t)
+        if not d:
+            continue
+        if d.get("ok") and d.get("pct") is not None:
+            pct = d["pct"]
+            line = f"{d.get('arrow', '➡️')} <b>{_esc(d.get('name', t))}</b> · {_fmt_pct(pct)}"
+            if t in giro and giro[t] is not None:
+                g = giro[t]
+                signo = "+" if g >= 0 else "−"
+                line += f" ({signo}{abs(g):.2f} vs anterior)"
+            lines.append(line)
+        else:
+            lines.append(f"❔ <b>{_esc(d.get('name', t))}</b> · s/d")
+    return lines
+
+
+def _speech_etf_lines_close(reaction: dict) -> list[str]:
+    """
+    Una línea por ETF para el CIERRE: NETO (inicio→fin) + rango del discurso
+    "(máx +0.40% / mín −0.60%)" a partir de max_up / max_down.
+    """
+    lines = []
+    etfs = reaction.get("etfs") or {}
+    for t in _SPEECH_ETF_ORDER:
+        d = etfs.get(t)
+        if not d:
+            continue
+        if d.get("ok") and d.get("pct") is not None:
+            pct = d["pct"]
+            line = f"{d.get('arrow', '➡️')} <b>{_esc(d.get('name', t))}</b> · {_fmt_pct(pct)}"
+            mu = d.get("max_up")
+            md = d.get("max_down")
+            if mu is not None and md is not None:
+                line += f" (máx {_fmt_pct(mu)} / mín {_fmt_pct(md)})"
+            lines.append(line)
+        else:
+            lines.append(f"❔ <b>{_esc(d.get('name', t))}</b> · s/d")
+    return lines
+
+
+def format_speech_update(event: dict, reaction: dict, analysis: dict,
+                         headlines: list[dict], update_num: int, mins_in: int,
+                         giro: dict | None = None) -> str:
+    """
+    SECCIÓN 1b — Actualización periódica de un discurso/comparecencia.
+
+    Encabezado `🎙️ REACCIÓN — <evento>` + "Actualización N (min +X)";
+    una línea por ETF (nombre legible + % + flecha + GIRO del tramo entre
+    paréntesis); dirección global + estrellas; dentro del <blockquote expandable>:
+    📝 qué se dijo, 📈 análisis/porqué, 🔗 enlace.
+
+    event: dict del evento tracked (usa "title").
+    reaction: salida de market_reaction.etf_reaction_since().
+    analysis: dict del LLM con {"resumen","direccion","stars","porque"} (o None).
+    headlines: lista de {"title","url","source"} usadas en el tramo.
+    giro: dict {ticker: delta_vs_actualizacion_anterior} (opcional).
+    """
+    a = analysis or {}
+    title = event.get("title", "") if isinstance(event, dict) else str(event)
+    ny = _ny_now()
+    dia = DIAS[ny.weekday()]
+    fecha = ny.strftime("%d/%m/%Y")
+    hora = ny.strftime("%H:%M")
+
+    direccion = (a.get("direccion") or _bias_to_dir(reaction.get("bias"))).lower()
+    dir_label = _DIR_LABEL.get(direccion, "↔️ Reacción mixta")
+    stars = a.get("stars", 3)
+    try:
+        stars = int(stars)
+    except (ValueError, TypeError):
+        stars = 3
+    star_str = _stars_str(stars)
+
+    lines = [
+        f"🎙️ <b>REACCIÓN — {_esc(title)}</b>",
+        f"{dia} {fecha} · {hora} ET",
+        f"Actualización {update_num} (min +{mins_in})",
+        SEPARATOR,
+        "",
+    ]
+    lines.extend(_speech_etf_lines(reaction, giro))
+    lines.append("")
+    lines.append(f"{dir_label} · {star_str}")
+
+    # --- DETALLE PLEGABLE ---
+    detail_parts = []
+    resumen = a.get("resumen") or ""
+    if resumen:
+        detail_parts.append("📝 <b>Qué se dijo:</b>")
+        detail_parts.append(_esc(resumen))
+        detail_parts.append("")
+    porque = a.get("porque") or a.get("analisis") or ""
+    if porque:
+        detail_parts.append("📈 <b>Análisis:</b>")
+        detail_parts.append(_esc(porque))
+        detail_parts.append("")
+    # Enlace del titular más relevante (el primero)
+    for h in (headlines or []):
+        if h.get("url"):
+            texto = h.get("title") or "Ver noticia"
+            detail_parts.append(f'🔗 <a href="{_esc(h["url"])}">{_esc(texto)}</a>')
+            break
+
+    if detail_parts:
+        detail_html = "\n".join(detail_parts).rstrip()
+        lines.append(f"<blockquote expandable>{detail_html}</blockquote>")
+
+    lines.append(SEPARATOR)
+    lines.append(_footer())
+
+    text = "\n".join(lines)
+    if len(text) > 4000:
+        text = text[:3950] + "\n... (truncado)"
+    return text
+
+
+def format_speech_close(event: dict, reaction: dict, analysis: dict) -> str:
+    """
+    SECCIÓN 1b — Cierre de un discurso/comparecencia.
+
+    Encabezado `🎙️ CIERRE — <evento>` con el movimiento NETO de los 4 ETFs
+    (inicio→fin de ventana) + síntesis global en el desplegable.
+    """
+    a = analysis or {}
+    title = event.get("title", "") if isinstance(event, dict) else str(event)
+    ny = _ny_now()
+    dia = DIAS[ny.weekday()]
+    fecha = ny.strftime("%d/%m/%Y")
+    hora = ny.strftime("%H:%M")
+
+    lines = [
+        f"🎙️ <b>CIERRE — {_esc(title)}</b>",
+        f"{dia} {fecha} · {hora} ET",
+        "Movimiento neto del discurso",
+        SEPARATOR,
+        "",
+    ]
+    lines.extend(_speech_etf_lines_close(reaction))
+    lines.append("")
+    bias = (reaction.get("bias") or "neutral").lower()
+    lines.append(_BIAS_LABEL.get(bias, "↔️ Sesgo mixto"))
+
+    detail_parts = []
+    sintesis = a.get("resumen") or a.get("porque") or ""
+    if sintesis:
+        detail_parts.append("📝 <b>Síntesis:</b>")
+        detail_parts.append(_esc(sintesis))
+    if detail_parts:
+        detail_html = "\n".join(detail_parts).rstrip()
+        lines.append(f"<blockquote expandable>{detail_html}</blockquote>")
+
+    lines.append(SEPARATOR)
+    lines.append(_footer())
+
+    text = "\n".join(lines)
+    if len(text) > 4000:
+        text = text[:3950] + "\n... (truncado)"
+    return text
+
+
 def _format_news_collapsible(num: int, item: NewsItem, a: dict) -> str:
     """
     Formatea una noticia individual de la Sección 1 con <blockquote expandable>.

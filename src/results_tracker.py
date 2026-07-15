@@ -22,7 +22,10 @@ mismo análisis en cada una de ellas."
 from __future__ import annotations
 
 import json
-from datetime import datetime
+import os
+import re
+import unicodedata
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -33,6 +36,62 @@ from .sources.base import NewsItem
 
 
 _NY_TZ = tz.gettz("America/New_York")
+
+# ============================================================
+#  DETECCIÓN DE EVENTOS DE DISCURSO / COMPARECENCIA (PARTE A)
+# ============================================================
+
+# Palabras clave (en inglés, como vienen del calendario) que identifican un
+# evento de DISCURSO/COMPARECENCIA sin resultado numérico. Se comparan sin
+# distinguir acentos ni mayúsculas.
+_SPEECH_KEYWORDS = (
+    "speech", "speaks", "testimony", "testifies", "testify",
+    "remarks", "statement",
+)
+
+# Palabras que NO aportan al "tema" del discurso al filtrar titulares.
+_SPEECH_STOP = {
+    "speech", "speaks", "testimony", "testifies", "testify", "remarks",
+    "statement", "and", "the", "for", "chair", "member", "day", "gov",
+}
+
+
+def _strip_accents(text: str) -> str:
+    """Quita acentos/diacríticos para comparar sin distinguirlos."""
+    try:
+        return "".join(
+            c for c in unicodedata.normalize("NFD", str(text))
+            if unicodedata.category(c) != "Mn"
+        )
+    except Exception:
+        return str(text)
+
+
+def _is_numeric_value(value) -> bool:
+    """¿El valor contiene algún dígito? (forecast/actual numérico)."""
+    if value is None:
+        return False
+    return bool(re.search(r"\d", str(value)))
+
+
+def _is_speech_event(event: dict) -> bool:
+    """
+    True si el evento es de DISCURSO/COMPARECENCIA (su "resultado" es la
+    reacción del mercado, no un número BEAT/MISS):
+
+    - El nombre (event/title) contiene una palabra clave de discurso
+      (sin distinguir acentos/mayúsculas), O
+    - El evento NO tiene pronóstico numérico (forecast vacío o no numérico).
+
+    Un evento numérico normal (con forecast numérico y sin palabras clave)
+    devuelve False y sigue por el flujo BEAT/MISS existente.
+    """
+    name = _strip_accents(event.get("title", "")).lower()
+    if any(kw in name for kw in _SPEECH_KEYWORDS):
+        return True
+    if not _is_numeric_value(event.get("forecast", "")):
+        return True
+    return False
 
 
 def _ny_now():
@@ -168,6 +227,8 @@ def check_pending_results() -> list[dict]:
     pending = []
 
     for event in events:
+        if _is_speech_event(event):
+            continue  # los discursos se manejan aparte (run_speech_tracking)
         if event.get("followed"):
             continue  # ya se envió el seguimiento
         if not _event_has_passed(event):
@@ -252,9 +313,30 @@ def mark_event_followed(event_hash: str, actual_value: str, new_analysis: dict) 
 
 def run_results_tracking() -> int:
     """
-    Ejecuta el seguimiento de resultados para la Sección 1.
+    Ejecuta TODO el seguimiento de la Sección 1:
+      1. Eventos NUMÉRICOS → flujo BEAT/MISS con datos reales (_run_numeric_tracking).
+      2. Eventos de DISCURSO/COMPARECENCIA → reacción del mercado periódica +
+         cierre al vencer la ventana (run_speech_tracking).
 
-    1. Carga eventos tracked del día.
+    Devuelve el total de mensajes de seguimiento enviados.
+    """
+    total = 0
+    try:
+        total += _run_numeric_tracking()
+    except Exception as e:
+        print(f"  ⚠️ Seguimiento numérico error: {e}")
+    try:
+        total += run_speech_tracking()
+    except Exception as e:
+        print(f"  ⚠️ Seguimiento de discursos error: {e}")
+    return total
+
+
+def _run_numeric_tracking() -> int:
+    """
+    Seguimiento de eventos NUMÉRICOS de la Sección 1 (flujo BEAT/MISS original).
+
+    1. Carga eventos tracked del día (excluye discursos, ver check_pending_results).
     2. Filtra los que ya pasaron pero no tienen seguimiento.
     3. Busca resultados reales en las fuentes del calendario.
     4. Si hay resultado real → re-analiza con LLM → envía a Telegram.
@@ -370,3 +452,339 @@ def run_results_tracking() -> int:
             print(f"     ✅ Seguimiento enviado")
 
     return sent_count
+
+
+# ============================================================
+#  SEGUIMIENTO DE DISCURSOS / COMPARECENCIAS (PARTE C)
+#  Opción 3: seguimiento periódico durante el discurso + cierre.
+# ============================================================
+
+def _speech_config() -> tuple[float, float, float]:
+    """
+    Configuración del seguimiento de discursos, con prioridad env > config.yaml
+    > default:
+      - SPEECH_WINDOW_MIN  (ventana del discurso, min)      default 120
+      - SPEECH_UPDATE_MIN  (cadencia entre actualizaciones)  default 30
+      - SPEECH_MIN_MOVE_PCT(movimiento mínimo para reportar) default 0.15
+    """
+    window, update, min_move = 120.0, 30.0, 0.15
+
+    # config.yaml (sección "speech")
+    try:
+        from .config import load_config
+        cfg = load_config().get("speech", {}) or {}
+        window = float(cfg.get("window_min", window))
+        update = float(cfg.get("update_min", update))
+        min_move = float(cfg.get("min_move_pct", min_move))
+    except Exception:
+        pass
+
+    # env (prioritario)
+    def _env_f(name: str, cur: float) -> float:
+        v = os.environ.get(name)
+        if v is None:
+            return cur
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            return cur
+
+    window = _env_f("SPEECH_WINDOW_MIN", window)
+    update = _env_f("SPEECH_UPDATE_MIN", update)
+    min_move = _env_f("SPEECH_MIN_MOVE_PCT", min_move)
+    return window, update, min_move
+
+
+def _event_start_dt(event: dict) -> datetime:
+    """Datetime NY de inicio del discurso (hoy + hora del evento)."""
+    minutes = _parse_time_to_minutes(event.get("time", ""))
+    ny = _ny_now()
+    if minutes is None:
+        return ny  # sin hora parseable → asumir "ahora"
+    return ny.replace(hour=minutes // 60, minute=minutes % 60, second=0, microsecond=0)
+
+
+def _parse_iso(s: Optional[str]) -> Optional[datetime]:
+    """Parsea un timestamp ISO guardado; devuelve datetime tz-aware NY o None."""
+    if not s:
+        return None
+    try:
+        d = datetime.fromisoformat(s)
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=_NY_TZ)
+        return d
+    except Exception:
+        return None
+
+
+def _fetch_speech_headlines(event: dict, max_items: int = 4) -> list[dict]:
+    """
+    Reúne titulares relevantes al discurso reutilizando las fuentes del
+    Sistema 2 (fetch_news_sources) y filtra por ponente/tema (nombre del
+    evento + genéricos de bancos centrales). Devuelve [{"title","url","source"}].
+    """
+    try:
+        from .report import fetch_news_sources, deduplicate
+        items = deduplicate(fetch_news_sources())
+    except Exception as e:
+        print(f"  ⚠️ No se pudieron traer titulares del discurso: {e}")
+        return []
+
+    name = _strip_accents(event.get("title", "")).lower()
+    kws: set[str] = set()
+    for w in re.split(r"[^a-z0-9]+", name):
+        if len(w) > 3 and w not in _SPEECH_STOP:
+            kws.add(w)
+    # Genéricos de política monetaria / bancos centrales
+    kws |= {
+        "fed", "fomc", "powell", "rate", "rates", "inflation", "interest",
+        "monetary", "hawkish", "dovish", "tapering", "treasury", "yellen",
+        "warsh",
+    }
+
+    # DEDUP CRUZADA con el Sistema 2: excluir titulares cuyo hash/firma ya esté
+    # en el estado COMPARTIDO de alertas enviadas (misma función de hashing que
+    # usa sent_state), para NO re-mencionar lo que el Sistema 2 ya alertó.
+    try:
+        from .report import get_sent_hash
+        from .sent_state import load_sent_signatures
+        sent_sigs = load_sent_signatures()
+    except Exception:
+        get_sent_hash = None
+        sent_sigs = set()
+
+    scored: list[tuple[int, dict]] = []
+    for it in items:
+        title = it.title or ""
+        # Saltar los ya alertados por el Sistema 2 (dedup cruzada).
+        if get_sent_hash is not None and sent_sigs:
+            try:
+                if get_sent_hash(title) in sent_sigs:
+                    continue
+            except Exception:
+                pass
+        low = _strip_accents(title).lower()
+        score = sum(1 for k in kws if k in low)
+        if score > 0:
+            scored.append((score, {
+                "title": title,
+                "url": it.url or "",
+                "source": it.source or "",
+            }))
+    scored.sort(key=lambda x: -x[0])
+    return [h for _s, h in scored[:max_items]]
+
+
+def _analyze_speech_segment(event: dict, reaction: dict,
+                            headlines: list[dict]) -> Optional[dict]:
+    """
+    UNA llamada al LLM para resumir el tramo del discurso:
+      (a) resumen 1-2 frases de lo que se dijo (de los titulares)
+      (b) dirección de la reacción (positiva/negativa/mixta) coherente con ETFs
+      (c) estrellas 1-5 de magnitud
+      (d) breve porqué
+    Devuelve dict parseado con {"resumen","direccion","stars","porque"} o None.
+    """
+    from .llm import chat
+    from .analyzer import _parse_json, SYSTEM_ANALYZER
+
+    etf_lines = []
+    for _t, d in (reaction.get("etfs") or {}).items():
+        if d.get("ok") and d.get("pct") is not None:
+            etf_lines.append(f"{d['name']}: {d['pct']:+.2f}%")
+    etf_str = "; ".join(etf_lines) or "sin datos de ETFs"
+    titulares = "\n".join(f"- {h['title']}" for h in (headlines or [])) or "(sin titulares nuevos)"
+
+    prompt = (
+        "Un ponente de la Fed / banco central está dando un discurso o "
+        "comparecencia. NO hay un número BEAT/MISS: el resultado es la REACCIÓN "
+        "del mercado a lo que dijo. Con los titulares del tramo y el movimiento "
+        "de los ETFs, devuelve SOLO un JSON:\n"
+        "```json\n"
+        '{"resumen": "1-2 frases de lo que se dijo en este tramo", '
+        '"direccion": "positiva|negativa|mixta", '
+        '"stars": 1-5, '
+        '"porque": "1 frase de por qué el mercado reacciona así"}\n'
+        "```\n\n"
+        f"Evento: {event.get('title', '')}\n"
+        f"Reacción de ETFs desde el inicio del discurso: {etf_str}\n"
+        f"Sesgo agregado: {reaction.get('bias', 'neutral')}\n"
+        f"Titulares del tramo:\n{titulares}"
+    )
+    try:
+        resp = chat(
+            [{"role": "system", "content": SYSTEM_ANALYZER},
+             {"role": "user", "content": prompt}],
+            reasoning=False,
+            max_tokens=600,
+        )
+        parsed = _parse_json(resp)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception as e:
+        print(f"  ⚠️ Error analizando tramo del discurso: {e}")
+    return None
+
+
+def _process_speech_update(event: dict, start: datetime, min_move_pct: float) -> str:
+    """
+    Procesa UN tramo del discurso. Devuelve "sent" | "skipped".
+
+    AHORRO DE TOKENS: si el movimiento máximo absoluto de los 4 ETFs es
+    < min_move_pct Y no hay titular nuevo relevante → NO llama al LLM ni envía.
+    """
+    from .market_reaction import etf_reaction_since
+    from .formatter import format_speech_update
+    from .notifier import send_to_telegram
+    from .backup import save_alert_backup
+
+    reaction = etf_reaction_since(start)
+    max_move = reaction.get("max_abs_move", 0.0)
+
+    headlines = _fetch_speech_headlines(event)
+    prev_titles = set(event.get("speech_seen_titles", []))
+    new_headlines = [h for h in headlines if h["title"] not in prev_titles]
+
+    # GIRO por tramo: % actual menos % de la actualización anterior (prev_reaction)
+    # para cada ETF. Refleja hacia dónde se movió DESDE la última actualización
+    # (el mercado puede irse a favor o en contra durante el discurso).
+    prev_reaction = event.get("prev_reaction") or {}
+    giro: dict[str, float] = {}
+    cur_pcts: dict[str, float] = {}
+    for tk, d in (reaction.get("etfs") or {}).items():
+        if d.get("ok") and d.get("pct") is not None:
+            cur_pcts[tk] = d["pct"]
+            if tk in prev_reaction and prev_reaction[tk] is not None:
+                giro[tk] = d["pct"] - prev_reaction[tk]
+
+    # Ahorro de tokens: poco movimiento y sin titulares nuevos → saltar tramo.
+    # Igual se actualiza prev_reaction (y el caller actualiza last_speech_update_at).
+    if max_move < min_move_pct and not new_headlines:
+        print(f"     ⏭️ Discurso sin novedad (máx {max_move:.2f}% < {min_move_pct}%, sin titulares) → salto")
+        if cur_pcts:
+            event["prev_reaction"] = cur_pcts
+        return "skipped"
+
+    analysis = _analyze_speech_segment(event, reaction, new_headlines or headlines)
+
+    update_num = int(event.get("speech_updates_sent", 0)) + 1
+    mins_in = max(0, int((_ny_now() - start).total_seconds() / 60.0))
+    text = format_speech_update(
+        event, reaction, analysis, new_headlines or headlines,
+        update_num, mins_in, giro=giro,
+    )
+
+    ok = send_to_telegram(text, parse_mode="HTML")
+    if not ok:
+        return "skipped"
+
+    # Guardar la reacción actual como prev_reaction para calcular el próximo giro.
+    event["prev_reaction"] = cur_pcts
+    # Recordar titulares vistos (limitado) para no repetir "novedad".
+    seen = list(prev_titles | {h["title"] for h in headlines})
+    event["speech_seen_titles"] = seen[-40:]
+    try:
+        save_alert_backup(
+            {"title": event.get("title"), "speech": True, "event": event},
+            analysis or {}, text,
+        )
+    except Exception:
+        pass
+    return "sent"
+
+
+def _send_speech_close(event: dict, start: datetime, window_end: datetime) -> bool:
+    """Envía el resumen de CIERRE con el movimiento NETO (inicio→fin) de los ETFs."""
+    from .market_reaction import etf_reaction_since
+    from .formatter import format_speech_close
+    from .notifier import send_to_telegram
+    from .backup import save_alert_backup
+
+    reaction = etf_reaction_since(start)
+    analysis = _analyze_speech_segment(event, reaction, _fetch_speech_headlines(event))
+    text = format_speech_close(event, reaction, analysis)
+
+    ok = send_to_telegram(text, parse_mode="HTML")
+    if ok:
+        try:
+            save_alert_backup(
+                {"title": event.get("title"), "speech_close": True, "event": event},
+                analysis or {}, text,
+            )
+        except Exception:
+            pass
+    return ok
+
+
+def run_speech_tracking() -> int:
+    """
+    Seguimiento periódico de eventos de DISCURSO/COMPARECENCIA (Opción 3).
+
+    Para cada discurso tracked NO cerrado:
+      - Ventana activa: desde la hora del evento hasta SPEECH_WINDOW_MIN después.
+      - Cadencia: una actualización como mucho cada SPEECH_UPDATE_MIN.
+      - Estado por-evento (en el propio tracked_events): last_speech_update_at,
+        speech_updates_sent, speech_closed, speech_seen_titles.
+      - Al vencer la ventana → mensaje de CIERRE (una sola vez) + speech_closed.
+
+    Devuelve cuántos mensajes (actualizaciones + cierres) se enviaron.
+    """
+    events = load_tracked_events()
+    speeches = [e for e in events if _is_speech_event(e)]
+    if not speeches:
+        return 0
+
+    window_min, update_min, min_move_pct = _speech_config()
+    now = _ny_now()
+    sent = 0
+    changed = False
+
+    for event in speeches:
+        if event.get("speech_closed"):
+            continue
+
+        start = _event_start_dt(event)
+        if now < start:
+            continue  # el discurso aún no empieza
+
+        window_end = start + timedelta(minutes=window_min)
+
+        # ¿Venció la ventana? → CIERRE (una sola vez)
+        if now >= window_end:
+            print(f"  🎙️ Cierre de discurso: {event.get('title', '')[:50]}")
+            try:
+                if _send_speech_close(event, start, window_end):
+                    sent += 1
+            except Exception as e:
+                print(f"     ⚠️ Error en cierre de discurso: {e}")
+            # Marcar cerrado pase lo que pase (no reintentar cada 10 min).
+            event["speech_closed"] = True
+            event["speech_closed_at"] = now.isoformat()
+            changed = True
+            continue
+
+        # ¿Toca actualización periódica? (cadencia SPEECH_UPDATE_MIN)
+        last_update = _parse_iso(event.get("last_speech_update_at"))
+        if last_update is not None:
+            mins_since = (now - last_update).total_seconds() / 60.0
+            if mins_since < update_min:
+                continue  # aún no toca (evita reenvíos del bot local cada ~10 min)
+
+        print(f"  🎙️ Discurso activo: {event.get('title', '')[:50]} (min +{int((now - start).total_seconds() / 60)})")
+        try:
+            result = _process_speech_update(event, start, min_move_pct)
+        except Exception as e:
+            print(f"     ⚠️ Error en tramo del discurso: {e}")
+            result = "skipped"
+
+        # SIEMPRE registrar el intento para respetar la cadencia (aunque se salte).
+        event["last_speech_update_at"] = now.isoformat()
+        changed = True
+        if result == "sent":
+            event["speech_updates_sent"] = int(event.get("speech_updates_sent", 0)) + 1
+            sent += 1
+
+    if changed:
+        save_tracked_events(events)
+
+    return sent

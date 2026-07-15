@@ -113,6 +113,20 @@ La confianza representa qué tan seguro estás del impacto predicho:
 - **40-54%:** Noticia ambigua, impacto depende de factores adicionales
 - **<40%:** Rumor o noticia de impacto dudoso
 
+## Declaraciones de la Fed / bancos centrales (ALTO IMPACTO SIEMPRE)
+
+Las declaraciones, discursos, comparecencias y testimonios de la **Reserva Federal (Fed), miembros del FOMC, o bancos centrales relevantes** sobre **tasas de interés, inflación, política monetaria, QT/QE, o el rumbo económico** mueven TODO el mercado (índices, sectores, futuros), aunque NO mencionen ninguna empresa concreta ni ticker de la watchlist.
+
+**Regla:** trata SIEMPRE estos casos como de **alto impacto** y **puede_mover_mercado = true**, con **confianza alta (≥ 70%)** y estrellas **4-5**, para que superen el umbral del Sistema 2. Aunque la noticia no cite un ticker seguido, afecta a los índices amplios (S&P 500, Nasdaq, Dow, Russell) que el usuario sigue vía ETFs (SPY, QQQ, DIA, IWM).
+
+Ejemplos que DEBEN puntuarse alto aunque no nombren empresas:
+- Powell / presidente de la Fed habla de tasas o inflación (hawkish/dovish)
+- Miembro del FOMC insinúa recortes o subidas de tipos
+- Comunicado del FOMC, minutas, testimonio ante el Congreso
+- Banco central mayor (BCE, BoJ, BoE) toma una decisión que arrastra a los índices USA
+
+No bajes ningún umbral: simplemente asigna la confianza y las estrellas que reflejen el verdadero impacto macro de estas declaraciones.
+
 ## Alto impacto (mueve el mercado)
 - Política monetaria USA: Fed, FOMC, tasas, QE/QT, Powell, Yellen
 - Datos macro USA: IPC, PIB, NFP, retail, inflación, empleo, ISM

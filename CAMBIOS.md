@@ -5,6 +5,48 @@
 
 ---
 
+## 15 de julio, 2026 — Seguimiento de DISCURSOS/COMPARECENCIAS (Opción 3): reacción del mercado por tramos + cierre
+
+- **Problema:** el seguimiento del Sistema 1 (`results_tracker.py`) solo manejaba eventos **numéricos** (busca "actual" → ✅ BEAT / ❌ MISS). Los **discursos/comparecencias** (Fed Chair Testimony, "Speech", "Speaks", "Testifies", "Remarks", "Statement") **no tienen número**: su resultado es la **reacción del mercado**, que puede cambiar de sentido (a favor y en contra) durante el discurso.
+- **Solución (Opción 3 — reparto de roles, sin duplicar contenido):**
+  - **Sistema 2 (nube, tiempo real):** manda los **comentarios** del discurso al instante (titulares de alto impacto). Ver PARTE E.
+  - **Sistema 1 (local, cada ~10 min):** manda la **reacción del mercado** (ETFs) por **tramos**, mostrando los **giros**; al terminar, un **cierre** con neto + rango alza/baja.
+  - **Dedup cruzada:** el Sistema 1 **no repite** titulares que el Sistema 2 ya alertó (misma firma de `sent_state`).
+
+### PARTE A — Detección de discurso (`src/results_tracker.py`)
+- `_is_speech_event(event)` → `True` si el forecast **no es numérico** (vacío/no parseable) **o** el nombre (sin acentos, minúsculas) contiene: `speech`, `speaks`, `testimony`, `testifies`, `testify`, `remarks`, `statement`. Los eventos numéricos siguen **exactamente** por el flujo BEAT/MISS (`_run_numeric_tracking`); `check_pending_results()` excluye discursos.
+
+### PARTE B — Reacción de ETFs (`src/market_reaction.py`, yfinance)
+- `etf_reaction_since(start_dt)` para **SPY/QQQ/IWM/DIA** con datos **intradía** (5m); % desde la barra más cercana (≥) a `start_dt` hasta la última barra. **Fallback** al cambio del día si no hay intradía. Devuelve nombre legible (S&P 500 / Nasdaq 100 / Russell 2000 / Dow Jones), % con signo, flecha 📈/📉/➡️.
+- **Nuevo:** además del `pct`, cada ETF devuelve **`max_up`** (máx al alza) y **`max_down`** (máx a la baja) usando High/Low intradía relativos al precio de inicio → para el **rango alza/baja** del cierre y para detectar giros. Devuelve sesgo agregado (positivo/negativo/mixto/neutral). **Nunca lanza:** si un ETF falla, lo marca (`ok:false`, `❔`) y sigue con los demás.
+
+### PARTE C — Seguimiento periódico (`src/results_tracker.py`)
+- `run_speech_tracking()` (dentro de `run_results_tracking`, que el bot local llama cada ~10 min):
+  - Ventana `[hora del evento, hora + SPEECH_WINDOW_MIN]` (default 120 min), tz NY.
+  - Cadencia: como mucho cada `SPEECH_UPDATE_MIN` (default 30 min). Estado **por evento** en `tracked_events`: `last_speech_update_at`, `speech_updates_sent`, `prev_reaction` (% de la actualización anterior, para el **giro**), `speech_closed`. Los discursos usan `speech_closed` (no `followed`).
+  - Por tramo: (1) `etf_reaction_since(start)`; (2) **giro** = % actual − % de `prev_reaction` por ETF; (3) titulares vía `fetch_news_sources` filtrados por ponente/tema, **con dedup cruzada** (excluye titulares cuyo hash ya esté en `sent_state`, misma `get_sent_hash`); (4) **ahorro de tokens:** si `|máx move| < SPEECH_MIN_MOVE_PCT` (default 0.15) **y** no hay titular nuevo → **salta** (no LLM, no envío) pero actualiza `last_speech_update_at` y `prev_reaction`; (5) 1 sola llamada LLM (JSON) → dirección/estrellas/porqué; (6) envía la actualización y guarda `prev_reaction`.
+  - **Cierre:** al vencer la ventana → un resumen con el **neto** (inicio→fin) + **rango** por ETF (máx alza / máx baja) + síntesis. Marca `speech_closed=true` (no repite).
+
+### PARTE D — Formato (`src/formatter.py`, HTML)
+- `format_speech_update`: `🎙️ REACCIÓN — <evento>` + "Actualización N (min +X)"; línea por ETF con % desde inicio + flecha y el **giro** entre paréntesis (ej. `S&P 500 · −0.30% (−0.20 vs anterior)`); dirección global + estrellas; `<blockquote expandable>` con 📝 qué se dijo, 📈 análisis, 🔗 enlace.
+- `format_speech_close`: `🎙️ CIERRE — <evento>`: por ETF el neto + rango `(máx +0.40% / mín −0.60%)`; síntesis final. Nombres legibles S&P 500 / Nasdaq 100 / Russell 2000 / Dow Jones.
+
+### PARTE E — Sistema 2 tiempo real para la Fed (`src/system_prompt.md`)
+- Se añadió una sección: declaraciones de la **Fed / bancos centrales / FOMC** (tasas, inflación, QT/QE) se puntúan como **alto impacto** (confianza ≥ 70%, estrellas 4-5, `puede_mover_mercado=true`) **aunque no mencionen un ticker** de la watchlist, para que superen el umbral del Sistema 2. **No se bajaron umbrales** (siguen 55% watchlist / 70% resto): solo se instruye al LLM a puntuar alto estos casos.
+
+### Config/env (defaults si faltan)
+- `SPEECH_WINDOW_MIN=120`, `SPEECH_UPDATE_MIN=30`, `SPEECH_MIN_MOVE_PCT=0.15` (env; también sección `speech` en `config.yaml`). Ver `_speech_config()`.
+
+### Verificado (sin enviar al canal)
+- Import de todos los módulos OK.
+- `etf_reaction_since(hace 90 min)` → 4 ETFs con %, flechas, `max_up`/`max_down`, sin lanzar (salida real: SPY +0.08%, QQQ +0.06%, IWM −0.01%, DIA +0.03%, sesgo positivo, source intraday).
+- Máquina de estados: **no** reenvía si <30 min desde `last_speech_update_at`; **salta** tramo si movimiento < umbral y sin titular nuevo (actualizando `last_speech_update_at` y `prev_reaction`); calcula el **giro** con `prev_reaction`; marca `speech_closed` al vencer la ventana y **no repite** cierre.
+- **Dedup cruzada:** un titular ya presente en `sent_state` (Sistema 2) **no** se incluye en el resumen del discurso.
+- Eventos **numéricos** siguen con BEAT/MISS sin cambios (`check_pending_results` los incluye y excluye discursos); reporte diario intacto.
+- `format_speech_update`/`format_speech_close` con datos de ejemplo → HTML válido, blockquotes balanceados.
+
+---
+
 ## 15 de julio, 2026 — Fix: seguimientos de resultados no llegaban al canal (fallback silencioso en `notifier`)
 
 - **Síntoma:** el reporte diario del Sistema 1 SÍ llegó al canal, pero los **3 seguimientos** de resultados NO se vieron, pese a quedar marcados `followed:true` y con backup (`data/backup/alert_2026-07-15_10-55-59.txt`).
