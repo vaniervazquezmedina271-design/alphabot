@@ -3,6 +3,20 @@
 > **Última actualización:** 15 de julio, 2026
 > **Ubicación del proyecto:** `C:\VANIER\AGENTE DE BUSQUEDA`
 
+> **📌 Novedades (15 jul 2026) — Fix: los seguimientos ahora sí llegan (y si algo falla, se nota):**
+> - **Problema:** los 3 seguimientos de resultados no se veían en el canal aunque
+>   el sistema los marcaba como enviados. Diagnóstico en vivo: el canal era el
+>   correcto y el HTML era **válido** (Telegram respondía 200). El fallo estaba en
+>   el envío: si el intento fallaba, el reintento **no dejaba rastro del error** y
+>   mandaba el texto con etiquetas `<...>` literales (ilegible).
+> - **Arreglo (`src/notifier.py`):** ahora el envío (1) **siempre registra** el
+>   código y el mensaje de error de Telegram cuando algo no sale 200 (nunca más
+>   "falla en silencio"); (2) si el formato HTML falla, el reintento va en **texto
+>   plano legible** (sin etiquetas); (3) respeta el límite de velocidad (429) de
+>   Telegram y reintenta esperando lo indicado.
+> - Los 3 seguimientos del 15/07 se entregaron al canal durante el diagnóstico
+>   (no se duplicaron).
+>
 > **📌 Novedades (15 jul 2026, noche) — El seguimiento de resultados lo hace tu PC:**
 > - El **seguimiento de resultados** del Sistema 1 (cuando un evento del reporte
 >   matutino publica su dato real: ✅ BEAT / ❌ MISS / ➡️ EN LÍNEA) ahora lo

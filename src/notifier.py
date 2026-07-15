@@ -10,6 +10,7 @@ Soporta dos modos de formato:
 from __future__ import annotations
 
 import re
+import time
 
 import requests
 
@@ -26,6 +27,15 @@ def send_to_telegram(text: str, chat_id: str = None, token: str = None,
     Devuelve True si todos los fragmentos se enviaron OK.
 
     parse_mode: "HTML" (default, soporta blockquote expandable), "Markdown", o None.
+
+    Comportamiento de fallos (para NO volver a fallar en silencio):
+      - Si el intento con parse_mode devuelve 429 (rate limit), respeta
+        `retry_after` y reintenta UNA vez con el mismo formato.
+      - Si el intento con parse_mode devuelve otro !=200, reintenta SIN
+        parse_mode pero con las etiquetas HTML ELIMINADAS (fallback legible,
+        no etiquetas literales).
+      - SIEMPRE imprime status + body cuando una respuesta no es 200.
+      - Solo devuelve True si TODOS los fragmentos se entregaron (200).
     """
     token = token or get_env("TELEGRAM_BOT_TOKEN")
     chat_id = chat_id or get_env("TELEGRAM_CHAT_ID")
@@ -56,20 +66,86 @@ def send_to_telegram(text: str, chat_id: str = None, token: str = None,
                 "disable_web_page_preview": True,
             }
             resp = requests.post(url, json=payload, timeout=15)
+
+            # --- Rate limit (429): respetar retry_after y reintentar 1 vez ---
+            if resp.status_code == 429:
+                wait = _retry_after_seconds(resp)
+                print(f"⚠️ Telegram 429 (rate limit). Reintentando en {wait}s... "
+                      f"body: {resp.text[:200]}")
+                time.sleep(wait)
+                resp = requests.post(url, json=payload, timeout=15)
+
             if resp.status_code != 200:
-                # Si falla, reintentar sin parse_mode (texto plano)
-                # NO pasar parse_mode=None → omitir la clave completamente
-                payload.pop("parse_mode", None)
-                resp2 = requests.post(url, json=payload, timeout=15)
+                # El envío con formato falló: registrar el error crudo (antes se
+                # perdía en silencio) y reintentar SIN parse_mode, pero con las
+                # etiquetas HTML ELIMINADAS para que el fallback sea legible.
+                print(f"⚠️ Telegram {resp.status_code} con parse_mode={parse_mode}: "
+                      f"{resp.text[:300]}")
+
+                fallback_payload = {
+                    "chat_id": chat_id,
+                    "text": _strip_tags(chunk),
+                    "disable_web_page_preview": True,
+                }
+                resp2 = requests.post(url, json=fallback_payload, timeout=15)
                 if resp2.status_code != 200:
-                    print(f"❌ Telegram error {resp2.status_code}: {resp2.text[:200]}")
+                    print(f"❌ Telegram error {resp2.status_code} (fallback texto plano): "
+                          f"{resp2.text[:300]}")
                     all_ok = False
-                # else: éxito con texto plano, all_ok se mantiene True
+                else:
+                    print("ℹ️ Entregado en texto plano (fallback sin formato HTML).")
         except Exception as e:
             print(f"❌ Error enviando a Telegram: {e}")
             all_ok = False
 
     return all_ok
+
+
+def _retry_after_seconds(resp) -> int:
+    """
+    Extrae los segundos de espera de una respuesta 429 de Telegram.
+    Busca en el JSON (parameters.retry_after) y en el header Retry-After.
+    Devuelve un valor acotado (1-30s) para no bloquear demasiado.
+    """
+    wait = 1
+    try:
+        data = resp.json()
+        wait = int(data.get("parameters", {}).get("retry_after", 0)) or wait
+    except Exception:
+        pass
+    try:
+        header = resp.headers.get("Retry-After")
+        if header:
+            wait = max(wait, int(header))
+    except Exception:
+        pass
+    return max(1, min(wait, 30))
+
+
+def _strip_tags(text: str) -> str:
+    """
+    Elimina las etiquetas HTML que usamos para Telegram, dejando texto legible.
+    Se usa como fallback cuando el envío con parse_mode=HTML falla: en vez de
+    mostrar '<blockquote expandable>...<b>...</b>' literal, muestra solo el texto.
+
+    - Convierte enlaces <a href="url">texto</a> en 'texto (url)'.
+    - Quita el resto de etiquetas (<b>, <i>, <blockquote ...>, etc.).
+    - Desescapa entidades HTML (&amp; &lt; &gt; ...).
+    """
+    import html as _html
+
+    # <a href="url">texto</a> → texto (url)
+    text = re.sub(
+        r'<a\s+href="([^"]*)"[^>]*>(.*?)</a>',
+        lambda m: f"{m.group(2)} ({m.group(1)})" if m.group(1) else m.group(2),
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    # Quitar cualquier otra etiqueta <...>
+    text = re.sub(r"<[^>]+>", "", text)
+    # Desescapar entidades HTML
+    text = _html.unescape(text)
+    return text
 
 
 def send_photo_to_telegram(image_path: str, caption: str = "",

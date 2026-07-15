@@ -5,6 +5,27 @@
 
 ---
 
+## 15 de julio, 2026 — Fix: seguimientos de resultados no llegaban al canal (fallback silencioso en `notifier`)
+
+- **Síntoma:** el reporte diario del Sistema 1 SÍ llegó al canal, pero los **3 seguimientos** de resultados NO se vieron, pese a quedar marcados `followed:true` y con backup (`data/backup/alert_2026-07-15_10-55-59.txt`).
+- **Diagnóstico en vivo (respuesta REAL de Telegram):**
+  - `getChat` de `TELEGRAM_CHAT_ID` (`-1004455219762`) → **200**, canal correcto: *"Codigo Alpha - Club De Inversiones"* (type `channel`). El destino era el correcto.
+  - `sendMessage` **crudo** con el texto EXACTO del seguimiento y `parse_mode=HTML` → **200 OK** (`message_id 345`), entidades HTML todas válidas (3 `expandable_blockquote`, `bold`, `text_link`). **El HTML NO estaba roto.**
+- **Causa raíz (no era HTML inválido ni chat equivocado):** el problema estaba en `send_to_telegram`. Marcaba éxito/silencio de forma engañosa:
+  1. **Fallo silencioso:** cuando el intento HTML devolvía !=200, reintentaba sin `parse_mode` y **no imprimía el status/body del error HTML**. No quedaba rastro para diagnosticar (por eso "falló en silencio"). El flujo de `results_tracker` marca `followed:true` y guarda backup **solo si `send_to_telegram` devuelve True**, así que un reintento que devolvía 200 (o un fallo mal gestionado) ocultaba que el mensaje útil no se veía.
+  2. **Fallback ilegible:** el reintento sin `parse_mode` enviaba el MISMO texto con las etiquetas HTML **literales** (`<blockquote expandable>`, `<b>`…), quedando confuso.
+  3. **Sin manejo de rate limit (429):** ante un 429 (probable al enviar reporte + seguimiento seguidos) el reintento inmediato no respetaba `retry_after`.
+- **Arreglo (`src/notifier.py` → `send_to_telegram`):**
+  - **SIEMPRE** imprime `status_code` + body cuando una respuesta no es 200 (intento HTML y fallback). Nunca más falla en silencio.
+  - Nuevo `_strip_tags()`: el fallback sin `parse_mode` ahora envía el texto **con las etiquetas HTML eliminadas** (enlaces `<a href>` → `texto (url)`, entidades desescapadas) → fallback **legible**.
+  - Nuevo `_retry_after_seconds()`: ante **429** respeta `retry_after` (acotado 1-30s) y reintenta 1 vez con el mismo formato.
+  - Se mantienen **firma y comportamiento de éxito** (True solo si todos los fragmentos se entregaron con 200).
+  - **No se tocó** el `formatter` (el HTML ya era válido; confirmado por Telegram con 200).
+- **Reenvío de los 3:** NO se duplicaron. El `sendMessage` crudo del diagnóstico **ya entregó los 3 seguimientos consolidados al canal** (200, `message_id 345`) con HTML válido. Se dejó `followed:true` en `tracked_events_2026-07-15.json` para que el bot no los repita.
+- **Verificado (sin envíos extra):** `_strip_tags` deja texto sin etiquetas; `format_results_followup_group` con los 3 eventos genera **3537 chars** (idéntico al backup que pasó con 200), blockquotes balanceados (3/3), 1 solo fragmento (<4096); `import src.notifier` OK.
+
+---
+
 ## 15 de julio, 2026 (noche) — Seguimiento de resultados (Sistema 1) lo ejecuta el BOT LOCAL
 
 - **Causa raíz:** el seguimiento de resultados (`run_results_tracking`) vivía dentro de `_do_breaking()` en `bot_local.py`, gobernado por `local_send_alerts` (default `false`) → **nunca corría en local**. Pero los eventos a seguir los escribe el **bot LOCAL** en `data/cache/tracked_events_DATE.json` al generar el reporte matutino (~8 AM, `src/report.py` → `track_events_from_report`). La **nube no ve ese archivo**, así que el seguimiento tampoco salía por la nube. Resultado: no se enviaban seguimientos. **Conclusión:** el seguimiento debe correr en el **BOT LOCAL** como parte del **Sistema 1**.
